@@ -1,0 +1,1482 @@
+[
+  {
+    "meta": {
+      "record_index": 0,
+      "scenario_id": "d1e87d89038f357e"
+    },
+    "features": {
+      "state/past/width": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/height": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/x": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/type": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/velocity_y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/z": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/type": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/velocity_x": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/vel_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/xyz": {
+        "__list__": true,
+        "length": 90000
+      },
+      "roadgraph_samples/dir": {
+        "__list__": true,
+        "length": 90000
+      },
+      "traffic_light_state/past/valid": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/velocity_y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/height": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/speed": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 80
+      },
+      "traffic_light_state/current/y": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/id": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/y": {
+        "__list__": true,
+        "length": 160
+      },
+      "scenario/id": {
+        "__bytes_list__": true,
+        "count": 1
+      },
+      "state/difficulty_level": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/tracks_to_predict": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/bbox_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/bbox_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/valid": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/x": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/current/y": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/x": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/z": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/z": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/future/vel_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/length": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/is_sdc": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/state": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/state": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/velocity_x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/valid": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/width": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 10
+      },
+      "roadgraph_samples/valid": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/current/length": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/valid": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/length": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/height": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/speed": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/state": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/width": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/id": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/speed": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/objects_of_interest": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/current/z": {
+        "__list__": true,
+        "length": 16
+      },
+      "traffic_light_state/current/id": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/velocity_y": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/past/velocity_x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/vel_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/past/id": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/bbox_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/id": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 1
+      }
+    }
+  },
+  {
+    "meta": {
+      "record_index": 1,
+      "scenario_id": "b7a21c1ec510e4fa"
+    },
+    "features": {
+      "state/past/width": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/height": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/x": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/type": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/velocity_y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/z": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/type": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/velocity_x": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/vel_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/xyz": {
+        "__list__": true,
+        "length": 90000
+      },
+      "roadgraph_samples/dir": {
+        "__list__": true,
+        "length": 90000
+      },
+      "traffic_light_state/past/valid": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/velocity_y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/height": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/speed": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 80
+      },
+      "traffic_light_state/current/y": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/id": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/y": {
+        "__list__": true,
+        "length": 160
+      },
+      "scenario/id": {
+        "__bytes_list__": true,
+        "count": 1
+      },
+      "state/difficulty_level": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/tracks_to_predict": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/bbox_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/bbox_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/valid": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/x": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/current/y": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/x": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/z": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/z": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/future/vel_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/length": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/is_sdc": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/state": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/state": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/velocity_x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/valid": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/width": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 10
+      },
+      "roadgraph_samples/valid": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/current/length": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/valid": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/length": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/height": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/speed": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/state": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/width": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/id": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/speed": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/objects_of_interest": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/current/z": {
+        "__list__": true,
+        "length": 16
+      },
+      "traffic_light_state/current/id": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/velocity_y": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/past/velocity_x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/vel_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/past/id": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/bbox_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/id": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 1
+      }
+    }
+  },
+  {
+    "meta": {
+      "record_index": 2,
+      "scenario_id": "d86d692d0616db75"
+    },
+    "features": {
+      "state/past/width": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/height": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/x": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/type": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/velocity_y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/z": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/type": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/velocity_x": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/vel_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/xyz": {
+        "__list__": true,
+        "length": 90000
+      },
+      "roadgraph_samples/dir": {
+        "__list__": true,
+        "length": 90000
+      },
+      "traffic_light_state/past/valid": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/velocity_y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/height": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/speed": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 80
+      },
+      "traffic_light_state/current/y": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/id": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/y": {
+        "__list__": true,
+        "length": 160
+      },
+      "scenario/id": {
+        "__bytes_list__": true,
+        "count": 1
+      },
+      "state/difficulty_level": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/tracks_to_predict": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/bbox_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/bbox_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/valid": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/x": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/current/y": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/x": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/z": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/z": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/future/vel_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/length": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/is_sdc": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/state": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/state": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/velocity_x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/valid": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/width": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 10
+      },
+      "roadgraph_samples/valid": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/current/length": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/valid": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/length": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/height": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/speed": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/state": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/width": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/id": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/speed": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/objects_of_interest": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/current/z": {
+        "__list__": true,
+        "length": 16
+      },
+      "traffic_light_state/current/id": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/velocity_y": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/past/velocity_x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/vel_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/past/id": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/bbox_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/id": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 1
+      }
+    }
+  },
+  {
+    "meta": {
+      "record_index": 3,
+      "scenario_id": "60820f06a2df0bb"
+    },
+    "features": {
+      "state/past/width": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/height": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/x": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/type": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/velocity_y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/z": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/type": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/velocity_x": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/vel_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/xyz": {
+        "__list__": true,
+        "length": 90000
+      },
+      "roadgraph_samples/dir": {
+        "__list__": true,
+        "length": 90000
+      },
+      "traffic_light_state/past/valid": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/velocity_y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/height": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/speed": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 80
+      },
+      "traffic_light_state/current/y": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/id": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/y": {
+        "__list__": true,
+        "length": 160
+      },
+      "scenario/id": {
+        "__bytes_list__": true,
+        "count": 1
+      },
+      "state/difficulty_level": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/tracks_to_predict": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/bbox_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/bbox_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/valid": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/x": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/current/y": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/x": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/z": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/z": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/future/vel_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/length": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/is_sdc": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/state": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/state": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/velocity_x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/valid": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/width": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 10
+      },
+      "roadgraph_samples/valid": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/current/length": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/valid": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/length": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/height": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/speed": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/state": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/width": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/id": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/speed": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/objects_of_interest": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/current/z": {
+        "__list__": true,
+        "length": 16
+      },
+      "traffic_light_state/current/id": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/velocity_y": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/past/velocity_x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/vel_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/past/id": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/bbox_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/id": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 1
+      }
+    }
+  },
+  {
+    "meta": {
+      "record_index": 4,
+      "scenario_id": "80222a4592d170ea"
+    },
+    "features": {
+      "state/past/width": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/height": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/x": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/type": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/velocity_y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/z": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/type": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/velocity_x": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/current/vel_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/xyz": {
+        "__list__": true,
+        "length": 90000
+      },
+      "roadgraph_samples/dir": {
+        "__list__": true,
+        "length": 90000
+      },
+      "traffic_light_state/past/valid": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/velocity_y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/height": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/speed": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 80
+      },
+      "traffic_light_state/current/y": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/id": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/y": {
+        "__list__": true,
+        "length": 160
+      },
+      "scenario/id": {
+        "__bytes_list__": true,
+        "count": 1
+      },
+      "state/difficulty_level": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/tracks_to_predict": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/bbox_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/bbox_yaw": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/valid": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/x": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/current/y": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/x": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/z": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/z": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/future/vel_yaw": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/future/valid": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/length": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/z": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/is_sdc": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/past/state": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/state": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/velocity_x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/valid": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/width": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 10
+      },
+      "roadgraph_samples/valid": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/current/length": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/current/valid": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/future/timestamp_micros": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/length": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/height": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/current/speed": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/state": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/width": {
+        "__list__": true,
+        "length": 128
+      },
+      "roadgraph_samples/id": {
+        "__list__": true,
+        "length": 30000
+      },
+      "state/past/timestamp_micros": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/future/y": {
+        "__list__": true,
+        "length": 10240
+      },
+      "state/past/speed": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/objects_of_interest": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/future/x": {
+        "__list__": true,
+        "length": 10240
+      },
+      "traffic_light_state/current/z": {
+        "__list__": true,
+        "length": 16
+      },
+      "traffic_light_state/current/id": {
+        "__list__": true,
+        "length": 16
+      },
+      "state/current/velocity_y": {
+        "__list__": true,
+        "length": 128
+      },
+      "state/past/velocity_x": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/past/vel_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/past/id": {
+        "__list__": true,
+        "length": 160
+      },
+      "state/past/bbox_yaw": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/future/id": {
+        "__list__": true,
+        "length": 1280
+      },
+      "state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 128
+      },
+      "traffic_light_state/future/y": {
+        "__list__": true,
+        "length": 1280
+      },
+      "traffic_light_state/current/timestamp_micros": {
+        "__list__": true,
+        "length": 1
+      }
+    }
+  }
+]
