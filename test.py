@@ -112,17 +112,23 @@ def read_raw_tfrecord(path: str, max_records: int) -> None:
 
 
 def main():
-	# Default behavior: read the Waymo TFExample TFRecord in the repo root
-	# (file you specified) and print a small number of records as pretty JSON.
-	DEFAULT_PATH = 'uncompressed_tf_example_training_training_tfexample.tfrecord-00022-of-01000'
+	# Process all TFRecord files in the data/ folder
+	data_dir = 'data'
 	DEFAULT_MAX = 5
 
-	path = DEFAULT_PATH
-	max_records = DEFAULT_MAX
-
-	if not os.path.exists(path):
-		print(f"Error: file not found: {path}")
+	# Get all TFRecord files in the data directory
+	tfrecord_files = []
+	if os.path.exists(data_dir):
+		for file in os.listdir(data_dir):
+			# Match common TFRecord naming patterns (e.g. *.tfrecord or *.tfrecord-000XX-of-XXXXX)
+			if '.tfrecord' in file:
+				tfrecord_files.append(os.path.join(data_dir, file))
+	
+	if not tfrecord_files:
+		print(f"Error: no TFRecord files found in {data_dir}/")
 		sys.exit(2)
+		
+	print(f"Found {len(tfrecord_files)} TFRecord files to process")
 
 	# Prefer TensorFlow (we'll use it to parse TFExample and attempt to
 	# deserialize bytes into tensors when possible).
@@ -133,98 +139,103 @@ def main():
 		print("To get parsed tf.train.Example output, install TensorFlow in your venv:")
 		print("  pip install tensorflow")
 		print()
-		read_raw_tfrecord(path, max_records)
+		for file_path in tfrecord_files:
+			print(f"\nProcessing file: {file_path} with raw reader")
+			read_raw_tfrecord(file_path, DEFAULT_MAX)
 		return
 
-	try:
-		# Use an enhanced reader that will try to decode bytes_list entries that
-		# were produced by tf.io.serialize_tensor (common in Waymo TFExample).
-		MAX_SAMPLE = 16
-		MAX_STR_CHARS = 200
+	# Use an enhanced reader that will try to decode bytes_list entries that
+	# were produced by tf.io.serialize_tensor (common in Waymo TFExample).
+	MAX_SAMPLE = 16
+	MAX_STR_CHARS = 200
 
-		def try_deserialize_tensor_summary(b: bytes):
-			# Return only dtype, shape and length (no values).
-			for dtype in (tf.float32, tf.float64, tf.int64, tf.int32, tf.uint8):
-				try:
-					t = tf.io.parse_tensor(b, out_type=dtype)
-					arr = t.numpy()
-					return {
-						'__tensor__': True,
-						'dtype': str(dtype.name),
-						'shape': list(arr.shape),
-						'length': int(arr.size),
-					}
-				except Exception:
-					continue
-			return None
+	def try_deserialize_tensor_summary(b: bytes):
+		# Return only dtype, shape and length (no values).
+		for dtype in (tf.float32, tf.float64, tf.int64, tf.int32, tf.uint8):
+			try:
+				t = tf.io.parse_tensor(b, out_type=dtype)
+				arr = t.numpy()
+				return {
+					'__tensor__': True,
+					'dtype': str(dtype.name),
+					'shape': list(arr.shape),
+					'length': int(arr.size),
+				}
+			except Exception:
+				continue
+		return None
 
-		def try_deserialize_tensor_full(b: bytes):
-			# Return the full tensor values (may be large) for saving to verbose JSON.
-			for dtype in (tf.float32, tf.float64, tf.int64, tf.int32, tf.uint8):
-				try:
-					t = tf.io.parse_tensor(b, out_type=dtype)
-					arr = t.numpy()
-					return {
-						'__tensor__': True,
-						'dtype': str(dtype.name),
-						'shape': list(arr.shape),
-						'values': arr.tolist(),
-					}
-				except Exception:
-					continue
-			return None
+	def try_deserialize_tensor_full(b: bytes):
+		# Return the full tensor values (may be large) for saving to verbose JSON.
+		for dtype in (tf.float32, tf.float64, tf.int64, tf.int32, tf.uint8):
+			try:
+				t = tf.io.parse_tensor(b, out_type=dtype)
+				arr = t.numpy()
+				return {
+					'__tensor__': True,
+					'dtype': str(dtype.name),
+					'shape': list(arr.shape),
+					'values': arr.tolist(),
+				}
+			except Exception:
+				continue
+		return None
 
-		def summarize_sequence(seq):
-			length = len(seq)
-			return {'__list__': True, 'length': length}
+	def summarize_sequence(seq):
+		length = len(seq)
+		return {'__list__': True, 'length': length}
 
-		def full_sequence(seq):
-			return list(seq)
+	def full_sequence(seq):
+		return list(seq)
 
-		def feature_value_to_py_waymo_summary(fv: 'tf.train.Feature'):
-			# Structure-only conversion (no actual values)
-			if fv.bytes_list.value:
-				# If bytes represent a serialized tensor, report its shape/dtype/length.
-				first = fv.bytes_list.value[0]
-				des = try_deserialize_tensor_summary(first)
+	def feature_value_to_py_waymo_summary(fv: 'tf.train.Feature'):
+		# Structure-only conversion (no actual values)
+		if fv.bytes_list.value:
+			# If bytes represent a serialized tensor, report its shape/dtype/length.
+			first = fv.bytes_list.value[0]
+			des = try_deserialize_tensor_summary(first)
+			if des is not None:
+				return des if len(fv.bytes_list.value) == 1 else [try_deserialize_tensor_summary(b) for b in fv.bytes_list.value]
+			# Otherwise report as string/base64 and length only
+			return {'__bytes_list__': True, 'count': len(fv.bytes_list.value)}
+		if fv.float_list.value:
+			return summarize_sequence(fv.float_list.value)
+		if fv.int64_list.value:
+			return summarize_sequence(fv.int64_list.value)
+		return None
+
+	def feature_value_to_py_waymo_full(fv: 'tf.train.Feature'):
+		# Full conversion (include values) for saving to verbose JSON
+		if fv.bytes_list.value:
+			out = []
+			for b in fv.bytes_list.value:
+				des = try_deserialize_tensor_full(b)
 				if des is not None:
-					return des if len(fv.bytes_list.value) == 1 else [try_deserialize_tensor_summary(b) for b in fv.bytes_list.value]
-				# Otherwise report as string/base64 and length only
-				return {'__bytes_list__': True, 'count': len(fv.bytes_list.value)}
-			if fv.float_list.value:
-				return summarize_sequence(fv.float_list.value)
-			if fv.int64_list.value:
-				return summarize_sequence(fv.int64_list.value)
-			return None
+					out.append(des)
+					continue
+				try:
+					s = b.decode('utf-8')
+					out.append({'__string__': True, 'value': s})
+				except Exception:
+					out.append({'__base64__': base64.b64encode(b).decode('ascii')})
+			return out if len(out) != 1 else out[0]
+		if fv.float_list.value:
+			return full_sequence(fv.float_list.value)
+		if fv.int64_list.value:
+			return full_sequence(fv.int64_list.value)
+		return None
 
-		def feature_value_to_py_waymo_full(fv: 'tf.train.Feature'):
-			# Full conversion (include values) for saving to verbose JSON
-			if fv.bytes_list.value:
-				out = []
-				for b in fv.bytes_list.value:
-					des = try_deserialize_tensor_full(b)
-					if des is not None:
-						out.append(des)
-						continue
-					try:
-						s = b.decode('utf-8')
-						out.append({'__string__': True, 'value': s})
-					except Exception:
-						out.append({'__base64__': base64.b64encode(b).decode('ascii')})
-				return out if len(out) != 1 else out[0]
-			if fv.float_list.value:
-				return full_sequence(fv.float_list.value)
-			if fv.int64_list.value:
-				return full_sequence(fv.int64_list.value)
-			return None
-
-		# Small wrapper to use the Waymo-aware feature conversion
-		def read_waymo(path: str, max_records: int):
-			import tensorflow as tf
-			ds = tf.data.TFRecordDataset(path)
+	# Small wrapper to use the Waymo-aware feature conversion
+	def read_waymo(file_paths: list[str], max_records_per_file: int):
+		import tensorflow as tf
+		total_printed = 0
+		total_verbose_records = []
+		total_header_records = []
+		
+		for file_path in file_paths:
+			print(f"\nProcessing file: {file_path}")
+			ds = tf.data.TFRecordDataset(file_path)
 			printed = 0
-			verbose_records = []
-			header_records = []
 			for i, raw in enumerate(ds):
 				b = raw.numpy()
 				ex = tf.train.Example()
@@ -240,7 +251,11 @@ def main():
 						sid = obj_full['scenario/id'].get('value')
 					else:
 						sid = None
-					record_meta = {'record_index': i}
+					record_meta = {
+						'record_index': total_printed,
+						'file_path': file_path,
+						'file_record_index': i
+					}
 					if sid:
 						record_meta['scenario_id'] = sid
 
@@ -252,38 +267,42 @@ def main():
 						print("(no top-level features found in summary conversion)")
 						print("Raw Example protobuf:\n", str(ex))
 					# Save verbose record and header (structure-only)
-					verbose_records.append({'meta': record_meta, 'features': obj_full})
-					header_records.append({'meta': record_meta, 'features': obj_summary})
+					total_verbose_records.append({'meta': record_meta, 'features': obj_full})
+					total_header_records.append({'meta': record_meta, 'features': obj_summary})
 				except Exception:
 					print(f"--- Record {i} (raw bytes, could not parse as Example) ---")
 					print(repr(b[:200]))
 
 				printed += 1
-				if printed >= max_records:
+				total_printed += 1
+				if printed >= max_records_per_file:
 					break
+					
+			print(f"Processed {printed} records from {file_path}")
 
-			# Write full verbose parsed records to test.json and structure-only headers to test_headers.json
-			try:
-				out_path = 'test.json'
-				with open(out_path, 'w', encoding='utf-8') as fo:
-					json.dump(verbose_records, fo, indent=2, ensure_ascii=False)
-				print(f"Wrote verbose parsed records to {out_path}")
-			except Exception as we:
-				print(f"Failed to write verbose JSON: {we}")
-			try:
-				hdr_path = 'test_headers.json'
-				with open(hdr_path, 'w', encoding='utf-8') as fo:
-					json.dump(header_records, fo, indent=2, ensure_ascii=False)
-				print(f"Wrote structure-only headers to {hdr_path}")
-			except Exception as he:
-				print(f"Failed to write headers JSON: {he}")
+		# Write full verbose parsed records to test.json and structure-only headers to test_headers.json
+		try:
+			out_path = 'test.json'
+			with open(out_path, 'w', encoding='utf-8') as fo:
+				json.dump(total_verbose_records, fo, indent=2, ensure_ascii=False)
+			print(f"\nWrote {len(total_verbose_records)} verbose parsed records to {out_path}")
+		except Exception as we:
+			print(f"Failed to write verbose JSON: {we}")
+		try:
+			hdr_path = 'test_headers.json'
+			with open(hdr_path, 'w', encoding='utf-8') as fo:
+				json.dump(total_header_records, fo, indent=2, ensure_ascii=False)
+			print(f"Wrote {len(total_header_records)} structure-only headers to {hdr_path}")
+		except Exception as he:
+			print(f"Failed to write headers JSON: {he}")
 
-		read_waymo(path, max_records)
+	try:
+		read_waymo(tfrecord_files, DEFAULT_MAX)
 	except Exception as e:
 		print(f"Failed reading with TensorFlow: {e}\nFalling back to raw reader.")
-		read_raw_tfrecord(path, max_records)
-
-
+		for file_path in tfrecord_files:
+			print(f"\nProcessing file: {file_path} with raw reader")
+			read_raw_tfrecord(file_path, DEFAULT_MAX)
 if __name__ == '__main__':
 	main()
 
