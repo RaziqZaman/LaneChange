@@ -114,7 +114,7 @@ def read_raw_tfrecord(path: str, max_records: int) -> None:
 def main():
 	# Process all TFRecord files in the data/ folder
 	data_dir = 'data'
-	DEFAULT_MAX = 5
+	DEFAULT_MAX = 6
 
 	# Get all TFRecord files in the data directory
 	tfrecord_files = []
@@ -146,8 +146,8 @@ def main():
 
 	# Use an enhanced reader that will try to decode bytes_list entries that
 	# were produced by tf.io.serialize_tensor (common in Waymo TFExample).
-	MAX_SAMPLE = 16
-	MAX_STR_CHARS = 200
+	MAX_SAMPLE = 24
+	MAX_STR_CHARS = 360
 
 	def try_deserialize_tensor_summary(b: bytes):
 		# Return only dtype, shape and length (no values).
