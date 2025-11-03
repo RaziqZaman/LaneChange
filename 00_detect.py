@@ -52,6 +52,7 @@ TOTAL_STEPS = PAST_STEPS + CURRENT_STEPS + FUTURE_STEPS
 # Lane centre types according to the public schema.
 LANE_CENTER_TYPES = {1, 2}
 ROAD_LINE_TYPES = {6, 7, 8, 9, 10, 11, 12, 13}
+PARALLEL_DOT_THRESHOLD = math.cos(math.radians(20))  # require ~20° or less difference
 
 # Spatial index parameters (coarse grid hash for nearest-neighbour queries).
 LANE_CELL_SIZE = 10.0  # metres
@@ -315,14 +316,30 @@ def segments_intersect(p0: Tuple[float, float], p1: Tuple[float, float], q0: Tup
     return False
 
 
-def crosses_road_line(positions: List[Tuple[float, float]], lane_ids: List[Optional[int]], road_line_segments: List[Tuple[float, float, float, float]]) -> bool:
+def lanes_are_parallel(lane_before: Optional[int], lane_after: Optional[int], lane_dir_map: Dict[int, Tuple[float, float]]) -> bool:
+    if lane_before is None or lane_after is None:
+        return False
+    dir_before = lane_dir_map.get(int(lane_before))
+    dir_after = lane_dir_map.get(int(lane_after))
+    if dir_before is None or dir_after is None:
+        return False
+    dot = abs(dir_before[0] * dir_after[0] + dir_before[1] * dir_after[1])
+    return dot >= PARALLEL_DOT_THRESHOLD
+
+
+def crosses_road_line_between(
+    positions: List[Tuple[float, float]],
+    start_idx: int,
+    end_idx: int,
+    road_line_segments: List[Tuple[float, float, float, float]],
+) -> bool:
     if not road_line_segments:
         return False
-    for idx in range(len(positions) - 1):
-        lane_a = lane_ids[idx]
-        lane_b = lane_ids[idx + 1]
-        if lane_a is None or lane_b is None or lane_a == lane_b:
-            continue
+    lower = max(0, start_idx)
+    upper = min(len(positions) - 1, end_idx)
+    if upper <= lower:
+        return False
+    for idx in range(lower, upper):
         x0, y0 = positions[idx]
         x1, y1 = positions[idx + 1]
         if not (math.isfinite(x0) and math.isfinite(y0) and math.isfinite(x1) and math.isfinite(y1)):
@@ -334,23 +351,90 @@ def crosses_road_line(positions: List[Tuple[float, float]], lane_ids: List[Optio
     return False
 
 
-def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Dict[Tuple[int, int], List[Tuple[float, float, float, int]]]:
+def extract_lane_change_events(
+    lane_ids: List[Optional[int]],
+    positions: List[Tuple[float, float]],
+    road_line_segments: List[Tuple[float, float, float, float]],
+    lane_dir_map: Dict[int, Tuple[float, float]],
+) -> List[Tuple[int, int, int]]:
+    events: List[Tuple[int, int, int]] = []
+    current_lane: Optional[int] = None
+    last_idx: Optional[int] = None
+
+    for idx, lane in enumerate(lane_ids):
+        if lane is None:
+            continue
+        if current_lane is None:
+            current_lane = lane
+            last_idx = idx
+            continue
+        if lane == current_lane:
+            last_idx = idx
+            continue
+
+        start_idx = last_idx if last_idx is not None else idx - 1
+        if start_idx is None or start_idx < 0:
+            current_lane = lane
+            last_idx = idx
+            continue
+
+        if not crosses_road_line_between(positions, start_idx, idx, road_line_segments):
+            current_lane = lane
+            last_idx = idx
+            continue
+
+        if not lanes_are_parallel(current_lane, lane, lane_dir_map):
+            current_lane = lane
+            last_idx = idx
+            continue
+
+        events.append((current_lane, lane, idx))
+        current_lane = lane
+        last_idx = idx
+
+    return events
+
+
+def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Tuple[
+    Dict[Tuple[int, int], List[Tuple[float, float, float, int]]],
+    Dict[int, Tuple[float, float]],
+]:
     types = get_int_list(feature_map, "roadgraph_samples/type")
     ids = get_int_list(feature_map, "roadgraph_samples/id")
     xyz = get_float_list(feature_map, "roadgraph_samples/xyz")
+    directions = get_float_list(feature_map, "roadgraph_samples/dir")
     lane_points: List[Tuple[float, float, float, int]] = []
+    dir_map: Dict[int, List[Tuple[float, float]]] = {}
 
     for idx, t in enumerate(types):
         if t not in LANE_CENTER_TYPES:
             continue
-        if 3 * idx + 2 >= len(xyz) or idx >= len(ids):
+        base_xyz = 3 * idx
+        base_dir = 3 * idx
+        if base_xyz + 2 >= len(xyz) or idx >= len(ids):
             continue
-        x = float(xyz[3 * idx])
-        y = float(xyz[3 * idx + 1])
-        z = float(xyz[3 * idx + 2])
+        x = float(xyz[base_xyz])
+        y = float(xyz[base_xyz + 1])
+        z = float(xyz[base_xyz + 2])
         lane_id = int(ids[idx])
         lane_points.append((x, y, z, lane_id))
-    return build_lane_index(lane_points)
+
+        if base_dir + 1 < len(directions):
+            dx = float(directions[base_dir])
+            dy = float(directions[base_dir + 1])
+            norm = math.hypot(dx, dy)
+            if norm > 1e-6:
+                dir_map.setdefault(lane_id, []).append((dx / norm, dy / norm))
+
+    lane_dir_avg: Dict[int, Tuple[float, float]] = {}
+    for lane_id, vectors in dir_map.items():
+        sx = sum(v[0] for v in vectors)
+        sy = sum(v[1] for v in vectors)
+        norm = math.hypot(sx, sy)
+        if norm > 1e-6:
+            lane_dir_avg[lane_id] = (sx / norm, sy / norm)
+
+    return build_lane_index(lane_points), lane_dir_avg
 
 
 def lane_change_detected(lane_ids: List[Optional[int]]) -> bool:
@@ -391,7 +475,7 @@ def process_scenario(
     track_ids = decode_track_ids(feature_map, num_tracks)
     is_sdc_list = get_float_list(feature_map, "state/is_sdc")
 
-    lane_index = collect_lane_points(feature_map)
+    lane_index, lane_dir_map = collect_lane_points(feature_map)
     road_line_segments = build_road_line_segments(feature_map)
 
     lane_change_count = 0
@@ -409,17 +493,19 @@ def process_scenario(
             sample["lane_id"] = lane_id
             positions.append((sample["x"], sample["y"]))
 
-        if not lane_change_detected(lane_assignments):
-            continue
-
-        if not crosses_road_line(positions, lane_assignments, road_line_segments):
+        events = extract_lane_change_events(
+            lane_assignments, positions, road_line_segments, lane_dir_map
+        )
+        if not events:
             continue
 
         lane_change_count += 1
         sv_id = track_ids[track_idx] or ""
         is_sdc = int(is_sdc_list[track_idx]) if track_idx < len(is_sdc_list) else 0
 
-        events_writer.writerow([scenario_id, sv_id, is_sdc])
+        for _, _, switch_index in events:
+            switch_step = switch_index if switch_index is not None else ""
+            events_writer.writerow([scenario_id, sv_id, is_sdc, switch_step])
 
         for step_idx, sample in enumerate(trace):
             lane_id = sample.get("lane_id")
@@ -478,7 +564,7 @@ def main() -> None:
         events_writer = csv.writer(events_fp)
         traces_writer = csv.writer(traces_fp)
 
-        events_writer.writerow(["scenario_id", "sv_id", "is_sdc"])
+        events_writer.writerow(["scenario_id", "sv_id", "is_sdc", "switch_timestep"])
         traces_writer.writerow(
             [
                 "scenario_id",
