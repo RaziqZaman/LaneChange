@@ -51,6 +51,7 @@ TOTAL_STEPS = PAST_STEPS + CURRENT_STEPS + FUTURE_STEPS
 
 # Lane centre types according to the public schema.
 LANE_CENTER_TYPES = {1, 2}
+ROAD_LINE_TYPES = {6, 7, 8, 9, 10, 11, 12, 13}
 
 # Spatial index parameters (coarse grid hash for nearest-neighbour queries).
 LANE_CELL_SIZE = 10.0  # metres
@@ -218,6 +219,39 @@ def build_lane_index(points: Iterable[Tuple[float, float, float, int]]) -> Dict[
     return grid
 
 
+def build_road_line_segments(feature_map: Dict[str, tf.train.Feature]) -> List[Tuple[float, float, float, float]]:
+    types = get_int_list(feature_map, "roadgraph_samples/type")
+    ids = get_int_list(feature_map, "roadgraph_samples/id")
+    xyz = get_float_list(feature_map, "roadgraph_samples/xyz")
+    point_map: Dict[int, List[Tuple[int, float, float]]] = {}
+
+    for idx, lane_type in enumerate(types):
+        if lane_type not in ROAD_LINE_TYPES:
+            continue
+        if idx >= len(ids):
+            continue
+        base = 3 * idx
+        if base + 1 >= len(xyz):
+            continue
+        lane_id = int(ids[idx])
+        x = float(xyz[base])
+        y = float(xyz[base + 1])
+        point_map.setdefault(lane_id, []).append((idx, x, y))
+
+    segments: List[Tuple[float, float, float, float]] = []
+    for lane_id, points in point_map.items():
+        if len(points) < 2:
+            continue
+        points.sort(key=lambda item: item[0])
+        for i in range(len(points) - 1):
+            _, x0, y0 = points[i]
+            _, x1, y1 = points[i + 1]
+            if x0 == x1 and y0 == y1:
+                continue
+            segments.append((x0, y0, x1, y1))
+    return segments
+
+
 def nearest_lane_id(
     grid: Dict[Tuple[int, int], List[Tuple[float, float, float, int]]],
     x: float,
@@ -246,6 +280,58 @@ def nearest_lane_id(
         if found and best_lane is not None:
             break
     return best_lane
+
+
+def _orientation(ax: float, ay: float, bx: float, by: float, cx: float, cy: float) -> float:
+    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+
+
+def _on_segment(ax: float, ay: float, bx: float, by: float, cx: float, cy: float) -> bool:
+    return min(ax, cx) - 1e-6 <= bx <= max(ax, cx) + 1e-6 and min(ay, cy) - 1e-6 <= by <= max(ay, cy) + 1e-6
+
+
+def segments_intersect(p0: Tuple[float, float], p1: Tuple[float, float], q0: Tuple[float, float], q1: Tuple[float, float]) -> bool:
+    ax, ay = p0
+    bx, by = p1
+    cx, cy = q0
+    dx, dy = q1
+
+    o1 = _orientation(ax, ay, bx, by, cx, cy)
+    o2 = _orientation(ax, ay, bx, by, dx, dy)
+    o3 = _orientation(cx, cy, dx, dy, ax, ay)
+    o4 = _orientation(cx, cy, dx, dy, bx, by)
+
+    if o1 * o2 < 0 and o3 * o4 < 0:
+        return True
+
+    if abs(o1) < 1e-6 and _on_segment(ax, ay, cx, cy, bx, by):
+        return True
+    if abs(o2) < 1e-6 and _on_segment(ax, ay, dx, dy, bx, by):
+        return True
+    if abs(o3) < 1e-6 and _on_segment(cx, cy, ax, ay, dx, dy):
+        return True
+    if abs(o4) < 1e-6 and _on_segment(cx, cy, bx, by, dx, dy):
+        return True
+    return False
+
+
+def crosses_road_line(positions: List[Tuple[float, float]], lane_ids: List[Optional[int]], road_line_segments: List[Tuple[float, float, float, float]]) -> bool:
+    if not road_line_segments:
+        return False
+    for idx in range(len(positions) - 1):
+        lane_a = lane_ids[idx]
+        lane_b = lane_ids[idx + 1]
+        if lane_a is None or lane_b is None or lane_a == lane_b:
+            continue
+        x0, y0 = positions[idx]
+        x1, y1 = positions[idx + 1]
+        if not (math.isfinite(x0) and math.isfinite(y0) and math.isfinite(x1) and math.isfinite(y1)):
+            continue
+        for seg in road_line_segments:
+            q0x, q0y, q1x, q1y = seg
+            if segments_intersect((x0, y0), (x1, y1), (q0x, q0y), (q1x, q1y)):
+                return True
+    return False
 
 
 def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Dict[Tuple[int, int], List[Tuple[float, float, float, int]]]:
@@ -306,6 +392,7 @@ def process_scenario(
     is_sdc_list = get_float_list(feature_map, "state/is_sdc")
 
     lane_index = collect_lane_points(feature_map)
+    road_line_segments = build_road_line_segments(feature_map)
 
     lane_change_count = 0
 
@@ -315,12 +402,17 @@ def process_scenario(
             continue
 
         lane_assignments: List[Optional[int]] = []
+        positions: List[Tuple[float, float]] = []
         for sample in trace:
             lane_id = nearest_lane_id(lane_index, sample["x"], sample["y"], sample["z"])
             lane_assignments.append(lane_id)
             sample["lane_id"] = lane_id
+            positions.append((sample["x"], sample["y"]))
 
         if not lane_change_detected(lane_assignments):
+            continue
+
+        if not crosses_road_line(positions, lane_assignments, road_line_segments):
             continue
 
         lane_change_count += 1
