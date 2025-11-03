@@ -32,7 +32,7 @@ import argparse
 import csv
 import math
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     import tensorflow as tf
@@ -123,27 +123,18 @@ def is_valid_coord(x: float, y: float, z: float) -> bool:
     )
 
 
-def is_valid_entry(idx: int, xs: Sequence[float], ys: Sequence[float], zs: Sequence[float], valids: Sequence[float]) -> bool:
-    if idx >= len(xs) or idx >= len(ys) or idx >= len(zs):
-        return False
-    if valids:
-        if idx >= len(valids):
-            return False
-        return valids[idx] > 0.5
-    return is_valid_coord(xs[idx], ys[idx], zs[idx])
-
-
-def slice_series(values: Sequence[float], track_idx: int, num_tracks: int, steps: int) -> List[float]:
-    result: List[float] = []
+def slice_track(values: Sequence[Any], track_idx: int, steps: int, fill: Any) -> List[Any]:
     if not values:
-        return [math.nan] * steps
+        return [fill] * steps
+    base = track_idx * steps
+    out: List[Any] = []
     for step in range(steps):
-        pos = track_idx + step * num_tracks
-        if pos < len(values):
-            result.append(float(values[pos]))
+        idx = base + step
+        if idx < len(values):
+            out.append(values[idx])
         else:
-            result.append(math.nan)
-    return result
+            out.append(fill)
+    return out
 
 
 def gather_vehicle_trace(feature_map: Dict[str, tf.train.Feature], track_idx: int, num_tracks: int) -> List[Dict[str, float]]:
@@ -167,28 +158,43 @@ def gather_vehicle_trace(feature_map: Dict[str, tf.train.Feature], track_idx: in
         ts_int = get_int_list(feature_map, f"{prefix}/timestamp_micros")
         valids = get_float_list(feature_map, f"{prefix}/valid")
 
-        series_x = slice_series(xs, track_idx, num_tracks, steps)
-        series_y = slice_series(ys, track_idx, num_tracks, steps)
-        series_z = slice_series(zs, track_idx, num_tracks, steps)
+        series_x = [
+            float(val) if val is not None else math.nan
+            for val in slice_track(xs, track_idx, steps, None)
+        ]
+        series_y = [
+            float(val) if val is not None else math.nan
+            for val in slice_track(ys, track_idx, steps, None)
+        ]
+        series_z = [
+            float(val) if val is not None else math.nan
+            for val in slice_track(zs, track_idx, steps, None)
+        ]
 
-        timestamps: List[Optional[int]] = []
         if ts_int:
-            timestamps = [int(slice_series(ts_int, track_idx, num_tracks, steps)[i]) for i in range(steps)]
+            raw = slice_track(ts_int, track_idx, steps, None)
+            timestamps = [int(val) if val is not None else None for val in raw]
         elif ts_float:
-            timestamps = [int(slice_series(ts_float, track_idx, num_tracks, steps)[i]) for i in range(steps)]
+            raw = slice_track(ts_float, track_idx, steps, None)
+            timestamps = [int(val) if val is not None else None for val in raw]
         else:
             timestamps = [None] * steps
 
+        valid_series: Optional[List[float]] = (
+            [float(val) for val in slice_track(valids, track_idx, steps, 0.0)]
+            if valids
+            else None
+        )
+
         for step in range(steps):
-            idx = track_idx + step * num_tracks
             x = series_x[step]
             y = series_y[step]
             z = series_z[step]
             if math.isnan(x) or math.isnan(y) or math.isnan(z):
                 continue
-            if not is_valid_entry(idx, xs, ys, zs, valids):
-                continue
             if not is_valid_coord(x, y, z):
+                continue
+            if valid_series is not None and valid_series[step] <= 0.5:
                 continue
 
             trace.append(

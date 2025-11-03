@@ -101,8 +101,9 @@ def gather_timeline(
     past_y = _floats("state/past/y")
     past_valid = _floats("state/past/valid")
     past_steps = len(past_x) // num_tracks if num_tracks else 0
+    base_past = track_idx * past_steps
     for step in range(past_steps):
-        idx = track_idx + step * num_tracks
+        idx = base_past + step
         if idx >= len(past_x) or idx >= len(past_y):
             break
         if _is_valid(idx, past_x, past_y, past_valid):
@@ -127,8 +128,9 @@ def gather_timeline(
     future_y = _floats("state/future/y")
     future_valid = _floats("state/future/valid")
     future_steps = len(future_x) // num_tracks if num_tracks else 0
+    base_future = track_idx * future_steps
     for step in range(future_steps):
-        idx = track_idx + step * num_tracks
+        idx = base_future + step
         if idx >= len(future_x) or idx >= len(future_y):
             break
         if _is_valid(idx, future_x, future_y, future_valid):
