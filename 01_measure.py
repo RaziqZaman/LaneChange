@@ -895,6 +895,11 @@ def main() -> None:
                     if sdc_idx is None and sdc_track_idx is not None and sdc_track_idx != track_idx:
                         sdc_idx = sdc_track_idx
 
+                    if lc_idx is not None and lt_idx == lc_idx:
+                        lt_idx = None
+                    if rc_idx is not None and rt_idx == rc_idx:
+                        rt_idx = None
+
                     def neighbor_info(idx: Optional[int]) -> Tuple[str, str]:
                         if idx is None:
                             return "", ""
