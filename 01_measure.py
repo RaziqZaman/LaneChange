@@ -27,6 +27,11 @@ except Exception as exc:  # pragma: no cover - dependency guard
         "Install it in your virtual environment before running this script."
     ) from exc
 
+try:
+    from tqdm import tqdm
+except Exception:
+    tqdm = None
+
 
 # Waymo Motion constants.
 PAST_STEPS = 10
@@ -42,6 +47,8 @@ LANE_SEARCH_RADIUS = 6
 LATERAL_DISTANCE_THRESHOLD = 3.5
 PARALLEL_DOT_THRESHOLD = math.cos(math.radians(20))
 DEFAULT_DT_SECONDS = 0.1
+PRE_WINDOW_STEPS = max(1, int(round(0.5 / DEFAULT_DT_SECONDS)))
+LANE_CENTER_SEPARATION_THRESHOLD = 0.75
 
 STEP_LABELS = [f"t{idx:02d}" for idx in range(TOTAL_STEPS)]
 
@@ -203,7 +210,7 @@ def assemble_track_series(feature_map: Dict[str, tf.train.Feature], track_idx: i
             positions.append(None)
 
     track_ids = get_float_list(feature_map, "state/id")
-    is_sdc_list = get_float_list(feature_map, "state/is_sdc")
+    is_sdc_list = get_int_list(feature_map, "state/is_sdc")
     type_list = get_float_list(feature_map, "state/type")
 
     track_id_str = ""
@@ -231,6 +238,7 @@ def assemble_track_series(feature_map: Dict[str, tf.train.Feature], track_idx: i
 def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Tuple[
     Dict[Tuple[int, int], List[Tuple[float, float, float, int]]],
     Dict[int, Tuple[float, float]],
+    Dict[int, Tuple[float, float]],
 ]:
     types = get_int_list(feature_map, "roadgraph_samples/type")
     ids = get_int_list(feature_map, "roadgraph_samples/id")
@@ -239,6 +247,8 @@ def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Tuple[
 
     lane_points: List[Tuple[float, float, float, int]] = []
     dir_map: Dict[int, List[Tuple[float, float]]] = {}
+
+    center_sums: Dict[int, Tuple[float, float, int]] = {}
 
     for idx, t in enumerate(types):
         if t not in LANE_CENTER_TYPES:
@@ -260,6 +270,9 @@ def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Tuple[
             if norm > 1e-6:
                 dir_map.setdefault(lane_id, []).append((dx / norm, dy / norm))
 
+        sum_x, sum_y, count = center_sums.get(lane_id, (0.0, 0.0, 0))
+        center_sums[lane_id] = (sum_x + x, sum_y + y, count + 1)
+
     lane_dir_avg: Dict[int, Tuple[float, float]] = {}
     for lane_id, vectors in dir_map.items():
         sx = sum(v[0] for v in vectors)
@@ -273,7 +286,12 @@ def collect_lane_points(feature_map: Dict[str, tf.train.Feature]) -> Tuple[
         cell = (int(math.floor(x / LANE_CELL_SIZE)), int(math.floor(y / LANE_CELL_SIZE)))
         lane_grid.setdefault(cell, []).append((x, y, z, lane_id))
 
-    return lane_grid, lane_dir_avg
+    lane_centers: Dict[int, Tuple[float, float]] = {}
+    for lane_id, (sx, sy, count) in center_sums.items():
+        if count > 0:
+            lane_centers[lane_id] = (sx / count, sy / count)
+
+    return lane_grid, lane_dir_avg, lane_centers
 
 
 def build_road_line_segments(feature_map: Dict[str, tf.train.Feature]) -> List[Tuple[float, float, float, float]]:
@@ -513,61 +531,119 @@ def compute_subject_metrics(
     }
 
 
-def find_lane_neighbors(
+def find_sustained_neighbors(
     track_data: List[TrackSeries],
     subject_idx: int,
-    step_idx: int,
     lane_id: Optional[int],
     lane_dir_map: Dict[int, Tuple[float, float]],
-) -> Tuple[Optional[int], Optional[int]]:
-    if lane_id is None:
-        return None, None
-    lane_dir = lane_dir_map.get(int(lane_id))
-    if lane_dir is None:
-        return None, None
-    if step_idx < 0 or step_idx >= TOTAL_STEPS:
-        return None, None
+    start_idx: int,
+    end_idx: int,
+    min_steps: int,
+) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+    start_idx = max(0, start_idx)
+    end_idx = min(TOTAL_STEPS - 1, end_idx)
+    if end_idx < start_idx:
+        return None, None, None
 
-    subject_track = track_data[subject_idx]
-    subject_pos = subject_track.positions[step_idx]
-    if subject_pos is None:
-        return None, None
+    window = list(range(start_idx, end_idx + 1))
+    if len(window) < min_steps:
+        return None, None, None
+
+    subject = track_data[subject_idx]
+    subject_positions: List[Optional[Tuple[float, float, float]]] = [subject.positions[t] for t in window]
+    if any(pos is None for pos in subject_positions):
+        return None, None, None
+    if any(not subject.valid[t] for t in window):
+        return None, None, None
+
+    lane_dir = lane_dir_map.get(int(lane_id)) if lane_id is not None else None
+    if lane_dir is None:
+        lane_dir = (1.0, 0.0)
 
     lead_idx: Optional[int] = None
     rear_idx: Optional[int] = None
-    lead_distance = float("inf")
-    rear_distance = -float("inf")
+    sdc_idx: Optional[int] = None
+    best_lead = float("inf")
+    best_rear = -float("inf")
+    best_sdc = float("inf")
 
     for idx, other in enumerate(track_data):
-        if idx == subject_idx:
-            continue
-        if other.agent_type != 1:
-            continue
-        if not other.valid[step_idx]:
-            continue
-        other_lane = other.lane_ids[step_idx]
-        if other_lane != lane_id:
-            continue
-        other_pos = other.positions[step_idx]
-        if other_pos is None:
+        if idx == subject_idx or other.agent_type != 1:
             continue
 
-        delta_x = other_pos[0] - subject_pos[0]
-        delta_y = other_pos[1] - subject_pos[1]
-        lon = delta_x * lane_dir[0] + delta_y * lane_dir[1]
-        lat = delta_x * (-lane_dir[1]) + delta_y * lane_dir[0]
+        is_sdc = other.is_sdc == 1
+        lon_values: List[float] = []
+        total_distance = 0.0
+        valid = True
 
-        if abs(lat) > LATERAL_DISTANCE_THRESHOLD:
+        for subj_pos, t in zip(subject_positions, window):
+            if subj_pos is None:
+                valid = False
+                break
+            if not other.valid[t]:
+                valid = False
+                break
+            other_pos = other.positions[t]
+            if other_pos is None:
+                valid = False
+                break
+
+            if not is_sdc:
+                other_lane = other.lane_ids[t]
+                if lane_id is not None and other_lane != lane_id:
+                    valid = False
+                    break
+
+            delta_x = other_pos[0] - subj_pos[0]
+            delta_y = other_pos[1] - subj_pos[1]
+            lon = delta_x * lane_dir[0] + delta_y * lane_dir[1]
+            lat = delta_x * (-lane_dir[1]) + delta_y * lane_dir[0]
+
+            if not is_sdc and abs(lat) > LATERAL_DISTANCE_THRESHOLD:
+                valid = False
+                break
+
+            lon_values.append(lon)
+            total_distance += math.hypot(delta_x, delta_y)
+
+        if not valid or len(lon_values) < min_steps:
             continue
 
-        if lon > 0 and lon < lead_distance:
-            lead_distance = lon
-            lead_idx = idx
-        elif lon < 0 and lon > rear_distance:
-            rear_distance = lon
-            rear_idx = idx
+        if all(lon > 0 for lon in lon_values):
+            avg_lon = sum(lon_values) / len(lon_values)
+            if avg_lon < best_lead:
+                best_lead = avg_lon
+                lead_idx = idx
+        elif all(lon < 0 for lon in lon_values):
+            avg_lon = sum(lon_values) / len(lon_values)
+            if avg_lon > best_rear:
+                best_rear = avg_lon
+                rear_idx = idx
 
-    return lead_idx, rear_idx
+        if is_sdc:
+            avg_dist = total_distance / len(lon_values)
+            if avg_dist < best_sdc:
+                best_sdc = avg_dist
+                sdc_idx = idx
+
+    return lead_idx, rear_idx, sdc_idx
+
+
+def find_lateral_settle_index(lat_accel: List[Optional[float]], start_idx: int) -> int:
+    prev = None
+    for idx in range(start_idx, TOTAL_STEPS):
+        val = lat_accel[idx]
+        if val is None:
+            continue
+        if abs(val) < 1e-6:
+            continue
+        if prev is None:
+            prev = val
+            continue
+        if prev * val <= 0:
+            return idx
+        prev = val
+    return min(TOTAL_STEPS - 1, start_idx)
 
 
 def compute_neighbor_metrics(
@@ -615,19 +691,40 @@ def format_series(series: List[Optional[float]]) -> List[str]:
     return formatted
 
 
+def format_position_series(track: Optional[TrackSeries]) -> List[str]:
+    if track is None:
+        return ["" for _ in range(TOTAL_STEPS)]
+    formatted: List[str] = []
+    for pos in track.positions:
+        if pos is None:
+            formatted.append("")
+        else:
+            x, y, z = pos
+            formatted.append(f"{x:.6f},{y:.6f},{z:.6f}")
+    return formatted
+
+
 def build_trace_header(base_header: List[str]) -> List[str]:
     per_step_columns = [
         "SV_speed",
         "SV_longitudinal_accel",
         "SV_lateral_accel",
+        "SV_position",
         "LC_longitudinal_gap",
         "LC_relative_speed",
+        "LC_position",
         "RC_longitudinal_gap",
         "RC_relative_speed",
+        "RC_position",
         "LT_longitudinal_gap",
         "LT_relative_speed",
+        "LT_position",
         "RT_longitudinal_gap",
         "RT_relative_speed",
+        "RT_position",
+        "SDC_longitudinal_gap",
+        "SDC_relative_speed",
+        "SDC_position",
     ]
     header = list(base_header)
     for label in STEP_LABELS:
@@ -661,6 +758,8 @@ def main() -> None:
         "target_lane_id",
         "sv_id",
         "sv_is_SDC",
+        "sdc_id",
+        "sdc_is_SDC",
         "lc_id",
         "lc_is_SDC",
         "rc_id",
@@ -689,7 +788,7 @@ def main() -> None:
 
             feature_map = example.features.feature
 
-            lane_index, lane_dir_map = collect_lane_points(feature_map)
+            lane_index, lane_dir_map, lane_centers = collect_lane_points(feature_map)
             road_line_segments = build_road_line_segments(feature_map)
 
             state_type = get_float_list(feature_map, "state/type")
@@ -703,6 +802,12 @@ def main() -> None:
             for track_idx in range(num_tracks):
                 track = assemble_track_series(feature_map, track_idx, num_tracks)
                 track_data.append(track)
+
+            sdc_track_idx: Optional[int] = None
+            for idx, track in enumerate(track_data):
+                if track.is_sdc:
+                    sdc_track_idx = idx
+                    break
 
             # Populate lane IDs for each track.
             for track in track_data:
@@ -743,72 +848,108 @@ def main() -> None:
                 lane_dirs = compute_lane_dirs_for_steps(lane_ids, lane_dir_map)
                 subject_metrics = compute_subject_metrics(track, lane_dirs)
 
-                total_events += len(events)
-
                 for current_lane_id, target_lane_id, switch_index in events:
+                    current_center = lane_centers.get(current_lane_id)
+                    target_center = lane_centers.get(target_lane_id)
+                    if current_center is None or target_center is None:
+                        continue
+                    if math.hypot(
+                        current_center[0] - target_center[0],
+                        current_center[1] - target_center[1],
+                    ) < LANE_CENTER_SEPARATION_THRESHOLD:
+                        continue
+
                     lane_change_timestamp = (
                         track.timestamps[switch_index] if track.timestamps[switch_index] is not None else ""
                     )
 
-                    prev_idx = max(switch_index - 1, 0)
-                    current_dir = lane_dir_map.get(current_lane_id)
-                    target_dir = lane_dir_map.get(target_lane_id)
-
+                    pre_start = switch_index - PRE_WINDOW_STEPS
+                    pre_end = switch_index - 1
                     lc_idx = rc_idx = lt_idx = rt_idx = None
-                    if current_dir is not None:
-                        lc_idx, rc_idx = find_lane_neighbors(
-                            track_data, track_idx, prev_idx, current_lane_id, lane_dir_map
+                    sdc_pre = sdc_post = None
+                    if pre_end >= pre_start:
+                        lc_idx, rc_idx, sdc_pre = find_sustained_neighbors(
+                            track_data,
+                            track_idx,
+                            current_lane_id,
+                            lane_dir_map,
+                            pre_start,
+                            pre_end,
+                            PRE_WINDOW_STEPS,
                         )
-                    if target_dir is not None:
-                        lt_idx, rt_idx = find_lane_neighbors(
-                            track_data, track_idx, switch_index, target_lane_id, lane_dir_map
-                        )
+
+                    settle_idx = find_lateral_settle_index(subject_metrics["lat_accel"], switch_index)
+                    post_start = max(switch_index, settle_idx)
+                    post_end = post_start + PRE_WINDOW_STEPS - 1
+                    lt_idx, rt_idx, sdc_post = find_sustained_neighbors(
+                        track_data,
+                        track_idx,
+                        target_lane_id,
+                        lane_dir_map,
+                        post_start,
+                        post_end,
+                        PRE_WINDOW_STEPS,
+                    )
+
+                    sdc_idx = sdc_post if sdc_post is not None else sdc_pre
+                    if sdc_idx is None and sdc_track_idx is not None and sdc_track_idx != track_idx:
+                        sdc_idx = sdc_track_idx
 
                     def neighbor_info(idx: Optional[int]) -> Tuple[str, str]:
                         if idx is None:
                             return "", ""
                         return track_data[idx].track_id, str(track_data[idx].is_sdc)
 
+                    total_events += 1
+
                     lc_id, lc_sdc = neighbor_info(lc_idx)
                     rc_id, rc_sdc = neighbor_info(rc_idx)
                     lt_id, lt_sdc = neighbor_info(lt_idx)
                     rt_id, rt_sdc = neighbor_info(rt_idx)
+                    sdc_id, sdc_sdc = neighbor_info(sdc_idx)
 
-                    events_writer.writerow(
-                        [
-                            scenario_id,
-                            switch_index,
-                            lane_change_timestamp,
-                            current_lane_id,
-                            target_lane_id,
-                            track.track_id,
-                            track.is_sdc,
-                            lc_id,
-                            lc_sdc,
-                            rc_id,
-                            rc_sdc,
-                            lt_id,
-                            lt_sdc,
-                            rt_id,
-                            rt_sdc,
-                        ]
-                    )
+                    events_writer.writerow([
+                        scenario_id,
+                        switch_index,
+                        lane_change_timestamp,
+                        current_lane_id,
+                        target_lane_id,
+                        track.track_id,
+                        track.is_sdc,
+                        sdc_id,
+                        sdc_sdc,
+                        lc_id,
+                        lc_sdc,
+                        rc_id,
+                        rc_sdc,
+                        lt_id,
+                        lt_sdc,
+                        rt_id,
+                        rt_sdc,
+                    ])
 
                     subject_long_vel = subject_metrics["long_vel"]
                     sv_speed_series = format_series(subject_metrics["speed"])
                     sv_long_accel_series = format_series(subject_metrics["long_accel"])
                     sv_lat_accel_series = format_series(subject_metrics["lat_accel"])
+                    sv_pos_series = format_position_series(track)
 
-                    def neighbor_series(idx: Optional[int]) -> Tuple[List[str], List[str]]:
+                    def neighbor_series(idx: Optional[int]) -> Tuple[List[str], List[str], List[str]]:
+                        neighbor_track = track_data[idx] if idx is not None else None
                         gaps, rel = compute_neighbor_metrics(
-                            track, track_data[idx] if idx is not None else None, lane_dirs, subject_long_vel
+                            track, neighbor_track, lane_dirs, subject_long_vel
                         )
-                        return format_series(gaps), format_series(rel)
+                        return (
+                            format_series(gaps),
+                            format_series(rel),
+                            format_position_series(neighbor_track),
+                        )
 
-                    lc_gap_series, lc_rel_series = neighbor_series(lc_idx)
-                    rc_gap_series, rc_rel_series = neighbor_series(rc_idx)
-                    lt_gap_series, lt_rel_series = neighbor_series(lt_idx)
-                    rt_gap_series, rt_rel_series = neighbor_series(rt_idx)
+                    lc_gap_series, lc_rel_series, lc_pos_series = neighbor_series(lc_idx)
+                    rc_gap_series, rc_rel_series, rc_pos_series = neighbor_series(rc_idx)
+                    lt_gap_series, lt_rel_series, lt_pos_series = neighbor_series(lt_idx)
+                    rt_gap_series, rt_rel_series, rt_pos_series = neighbor_series(rt_idx)
+                    sdc_gap_series, sdc_rel_series, sdc_pos_series = neighbor_series(sdc_idx)
 
                     trace_row: List[Any] = [
                         scenario_id,
@@ -818,6 +959,8 @@ def main() -> None:
                         target_lane_id,
                         track.track_id,
                         track.is_sdc,
+                        sdc_id,
+                        sdc_sdc,
                         lc_id,
                         lc_sdc,
                         rc_id,
@@ -829,21 +972,27 @@ def main() -> None:
                     ]
 
                     for idx in range(TOTAL_STEPS):
-                        trace_row.extend(
-                            [
-                                sv_speed_series[idx],
-                                sv_long_accel_series[idx],
-                                sv_lat_accel_series[idx],
-                                lc_gap_series[idx],
-                                lc_rel_series[idx],
-                                rc_gap_series[idx],
-                                rc_rel_series[idx],
-                                lt_gap_series[idx],
-                                lt_rel_series[idx],
-                                rt_gap_series[idx],
-                                rt_rel_series[idx],
-                            ]
-                        )
+                        trace_row.extend([
+                            sv_speed_series[idx],
+                            sv_long_accel_series[idx],
+                            sv_lat_accel_series[idx],
+                            sv_pos_series[idx],
+                            lc_gap_series[idx],
+                            lc_rel_series[idx],
+                            lc_pos_series[idx],
+                            rc_gap_series[idx],
+                            rc_rel_series[idx],
+                            rc_pos_series[idx],
+                            lt_gap_series[idx],
+                            lt_rel_series[idx],
+                            lt_pos_series[idx],
+                            rt_gap_series[idx],
+                            rt_rel_series[idx],
+                            rt_pos_series[idx],
+                            sdc_gap_series[idx],
+                            sdc_rel_series[idx],
+                            sdc_pos_series[idx],
+                        ])
 
                     traces_writer.writerow(trace_row)
 
@@ -851,8 +1000,13 @@ def main() -> None:
 
 
 def iterate_examples(data_dir: Path, max_records: Optional[int]):
+    file_paths = sorted(data_dir.glob("*.tfrecord*"))
+    file_iter: Iterable[Path] = file_paths
+    if tqdm is not None:
+        file_iter = tqdm(file_paths, total=len(file_paths), desc="Files", unit="file")
+
     processed = 0
-    for tf_path in sorted(data_dir.glob("*.tfrecord*")):
+    for tf_path in file_iter:
         dataset = tf.data.TFRecordDataset(str(tf_path))
         for record_index, raw in enumerate(dataset):
             if max_records is not None and processed >= max_records:
@@ -865,4 +1019,3 @@ def iterate_examples(data_dir: Path, max_records: Optional[int]):
 
 if __name__ == "__main__":
     main()
-
