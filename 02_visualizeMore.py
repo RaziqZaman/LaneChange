@@ -227,6 +227,12 @@ def main() -> None:
     for key, (hh_values, hav_values) in collected.items():
         if key in SUBJECT_METRICS:
             continue
+        if key in ("RT_longitudinal_gap", "RC_longitudinal_gap"):
+            hh_values = [val for val in hh_values if val <= 0.0]
+            hav_values = [val for val in hav_values if val <= 0.0]
+        if key in ("LC_longitudinal_gap", "LT_longitudinal_gap"):
+            hh_values = [val for val in hh_values if val >= 0.0]
+            hav_values = [val for val in hav_values if val >= 0.0]
         output_path = args.output_dir / f"02_more_{key}.png"
         title = key.replace("_", " ")
         make_histogram(hh_values, hav_values, title, output_path)
