@@ -4,10 +4,15 @@
 The script selects a random TFRecord from ``data/`` (unless overridden) and
 draws:
 
-* ``outputs/motion.png`` – vehicle trajectories across all 91 timesteps with
-  current speeds and heading angles annotated.
+* ``outputs/motion.png`` – vehicle trajectories coloured by agent role.
 * ``outputs/roads.png`` – lane centre polylines (solid blue) and lane boundary
   polylines coloured/styled by their road-graph type.
+* ``outputs/closestLane.png`` – vehicle trajectories with their nearest lane
+  centre lines.
+* ``outputs/laneChange.png`` – same as ``closestLane`` but highlighting vehicles
+  that change lanes.
+* ``outputs/velocityComponents.png`` – trajectories with projected velocity
+  components (parallel/perpendicular to the nearest lane centre).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 try:
     import matplotlib.pyplot as plt
     from matplotlib import colors as mcolors
+    from matplotlib import patches as mpatches
 except Exception as exc:  # pragma: no cover - visual output requires matplotlib
     raise SystemExit("matplotlib is required to run this script.") from exc
 
@@ -53,6 +59,9 @@ BOUNDARY_STYLES: Dict[int, Tuple[str, str, float]] = {
     12: ("#f7d16e", "-", 2.2),          # Solid double yellow
     13: ("#f7d16e", "-.", 2.0),         # Passing double yellow
 }
+
+LANE_CELL_SIZE = 10.0
+LANE_SEARCH_RADIUS = 6
 
 
 def get_float_list(feature_map: Dict[str, tf.train.Feature], key: str) -> Sequence[float]:
@@ -174,6 +183,13 @@ def collect_vehicle_traces(feature_map: Dict[str, tf.train.Feature]) -> List[Dic
     future_z = get_float_list(feature_map, "state/future/z")
     future_valid = get_float_list(feature_map, "state/future/valid")
 
+    past_vx = get_float_list(feature_map, "state/past/velocity_x")
+    past_vy = get_float_list(feature_map, "state/past/velocity_y")
+    current_vx = get_float_list(feature_map, "state/current/velocity_x")
+    current_vy = get_float_list(feature_map, "state/current/velocity_y")
+    future_vx = get_float_list(feature_map, "state/future/velocity_x")
+    future_vy = get_float_list(feature_map, "state/future/velocity_y")
+
     current_speed = get_float_list(feature_map, "state/current/speed")
     current_heading = get_float_list(feature_map, "state/current/bbox_yaw")
 
@@ -183,19 +199,23 @@ def collect_vehicle_traces(feature_map: Dict[str, tf.train.Feature]) -> List[Dic
         positions: List[Tuple[float, float]] = []
 
         segments = [
-            ("state/past", past_x, past_y, past_z, past_valid, PAST_STEPS),
-            ("state/current", current_x, current_y, current_z, current_valid, CURRENT_STEPS),
-            ("state/future", future_x, future_y, future_z, future_valid, FUTURE_STEPS),
+            (past_x, past_y, past_z, past_valid, past_vx, past_vy, PAST_STEPS),
+            (current_x, current_y, current_z, current_valid, current_vx, current_vy, CURRENT_STEPS),
+            (future_x, future_y, future_z, future_valid, future_vx, future_vy, FUTURE_STEPS),
         ]
 
         offset = 0
         current_position: Optional[Tuple[float, float]] = None
+        current_index: Optional[int] = None
+        velocities: List[Tuple[float, float]] = []
 
-        for _, xs, ys, zs, valids, steps in segments:
+        for xs, ys, zs, valids, vxs, vys, steps in segments:
             slice_x = slice_segment(xs, track_idx, steps)
             slice_y = slice_segment(ys, track_idx, steps)
             slice_z = slice_segment(zs, track_idx, steps)
             slice_valid = slice_segment(valids, track_idx, steps) if valids else [None] * steps
+            slice_vx = slice_segment(vxs, track_idx, steps) if vxs else [None] * steps
+            slice_vy = slice_segment(vys, track_idx, steps) if vys else [None] * steps
 
             for step in range(steps):
                 x = slice_x[step]
@@ -211,8 +231,14 @@ def collect_vehicle_traces(feature_map: Dict[str, tf.train.Feature]) -> List[Dic
                     continue
 
                 positions.append((x, y))
+                vx_val = slice_vx[step] if step < len(slice_vx) else None
+                vy_val = slice_vy[step] if step < len(slice_vy) else None
+                vx = float(vx_val) if vx_val is not None else 0.0
+                vy = float(vy_val) if vy_val is not None else 0.0
+                velocities.append((vx, vy))
                 if offset == PAST_STEPS and step == 0:
                     current_position = (x, y)
+                    current_index = len(positions) - 1
             offset += steps
 
         speed = float(slice_segment(current_speed, track_idx, 1)[0] or 0.0)
@@ -224,6 +250,8 @@ def collect_vehicle_traces(feature_map: Dict[str, tf.train.Feature]) -> List[Dic
                 "track_id": track_ids[track_idx],
                 "positions": positions,
                 "current_pos": current_position,
+                "current_index": current_index,
+                "velocities": velocities,
                 "speed": speed,
                 "heading": heading,
                 "is_sdc": bool(is_sdc),
@@ -261,6 +289,109 @@ def collect_road_points(feature_map: Dict[str, tf.train.Feature]) -> Tuple[
 
     return lane_centers, boundaries
 
+
+def build_lane_polylines(lane_centers: Dict[int, List[Tuple[int, float, float]]]) -> Dict[int, List[Tuple[float, float]]]:
+    polylines: Dict[int, List[Tuple[float, float]]] = {}
+    for lane_id, points in lane_centers.items():
+        if len(points) < 2:
+            continue
+        sorted_points = sorted(points, key=lambda item: item[0])
+        polyline = [(float(x), float(y)) for _, x, y in sorted_points]
+        polylines[lane_id] = polyline
+    return polylines
+
+
+def compute_lane_directions(polylines: Dict[int, List[Tuple[float, float]]]) -> Dict[int, Tuple[float, float]]:
+    dir_map: Dict[int, Tuple[float, float]] = {}
+    for lane_id, points in polylines.items():
+        if len(points) < 2:
+            continue
+        sx = sy = 0.0
+        for (x0, y0), (x1, y1) in zip(points[:-1], points[1:]):
+            dx = x1 - x0
+            dy = y1 - y0
+            norm = math.hypot(dx, dy)
+            if norm < 1e-6:
+                continue
+            sx += dx / norm
+            sy += dy / norm
+        norm_total = math.hypot(sx, sy)
+        if norm_total < 1e-6:
+            continue
+        dir_map[lane_id] = (sx / norm_total, sy / norm_total)
+    return dir_map
+
+
+def build_lane_grid(polylines: Dict[int, List[Tuple[float, float]]]) -> Dict[Tuple[int, int], List[Tuple[float, float, int]]]:
+    grid: Dict[Tuple[int, int], List[Tuple[float, float, int]]] = {}
+    for lane_id, points in polylines.items():
+        for x, y in points:
+            cell = (int(math.floor(x / LANE_CELL_SIZE)), int(math.floor(y / LANE_CELL_SIZE)))
+            grid.setdefault(cell, []).append((x, y, lane_id))
+    return grid
+
+
+def nearest_lane_id(grid: Dict[Tuple[int, int], List[Tuple[float, float, int]]], x: float, y: float) -> Optional[int]:
+    if not grid:
+        return None
+    cell_x = int(math.floor(x / LANE_CELL_SIZE))
+    cell_y = int(math.floor(y / LANE_CELL_SIZE))
+    best_lane: Optional[int] = None
+    best_dist2 = float("inf")
+    for radius in range(LANE_SEARCH_RADIUS + 1):
+        found = False
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                bucket = (cell_x + dx, cell_y + dy)
+                for px, py, lane_id in grid.get(bucket, ()):
+                    found = True
+                    dist2 = (px - x) ** 2 + (py - y) ** 2
+                    if dist2 < best_dist2:
+                        best_dist2 = dist2
+                        best_lane = lane_id
+        if found and best_lane is not None:
+            break
+    return best_lane
+
+
+def detect_lane_changes(lane_ids: List[Optional[int]]) -> List[int]:
+    prev: Optional[int] = None
+    change_indices: List[int] = []
+    for idx, lane_id in enumerate(lane_ids):
+        if lane_id is None:
+            continue
+        if prev is None:
+            prev = lane_id
+            continue
+        if lane_id != prev:
+            change_indices.append(idx)
+            prev = lane_id
+    return change_indices
+
+
+def assign_lane_information(
+    traces: List[Dict[str, object]],
+    lane_grid: Dict[Tuple[int, int], List[Tuple[float, float, int]]],
+) -> None:
+    for trace in traces:
+        positions: List[Tuple[float, float]] = trace.get("positions", [])  # type: ignore[assignment]
+        lane_ids: List[Optional[int]] = []
+        for x, y in positions:
+            lane_ids.append(nearest_lane_id(lane_grid, x, y))
+        trace["lane_ids"] = lane_ids
+        change_indices = detect_lane_changes(lane_ids)
+        trace["lane_change"] = bool(change_indices)
+        trace["lane_change_indices"] = change_indices
+        current_index: Optional[int] = trace.get("current_index")  # type: ignore[assignment]
+        current_lane: Optional[int] = None
+        if current_index is not None and 0 <= current_index < len(lane_ids):
+            current_lane = lane_ids[current_index]
+        if current_lane is None:
+            for lane_id in lane_ids:
+                if lane_id is not None:
+                    current_lane = lane_id
+                    break
+        trace["current_lane_id"] = current_lane
 
 def compute_extent(
     traces: List[Dict[str, object]],
@@ -301,17 +432,7 @@ def compute_extent(
     return (xmin - padding, xmax + padding, ymin - padding, ymax + padding)
 
 
-def plot_motion(
-    traces: List[Dict[str, object]],
-    output_path: Path,
-    extent: Optional[Tuple[float, float, float, float]] = None,
-) -> None:
-    if not traces:
-        print("No vehicle traces available for motion plot.")
-        return
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-
+def assign_trace_colors(traces: List[Dict[str, object]]) -> List[str]:
     av_color = "#1f77b4"
     default_cycle = plt.rcParams.get("axes.prop_cycle")
     base_colors = default_cycle.by_key().get("color", []) if default_cycle else []
@@ -326,16 +447,33 @@ def plot_motion(
         human_palette = ["#d62728", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b"]
     human_color_cycle = cycle(human_palette)
 
+    colors: List[str] = []
     for trace in traces:
+        if trace.get("is_sdc"):
+            colors.append(av_color)
+        else:
+            colors.append(mcolors.to_hex(next(human_color_cycle)))
+    return colors
+
+
+def plot_motion(
+    traces: List[Dict[str, object]],
+    colors: List[str],
+    output_path: Path,
+    extent: Optional[Tuple[float, float, float, float]] = None,
+) -> None:
+    if not traces:
+        print("No vehicle traces available for motion plot.")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    for trace, color in zip(traces, colors):
         positions = trace["positions"]  # type: ignore[assignment]
         if not positions:
             continue
         xs = [pt[0] for pt in positions]
         ys = [pt[1] for pt in positions]
-        if trace.get("is_sdc"):
-            color = av_color
-        else:
-            color = next(human_color_cycle)
         ax.plot(xs, ys, "-", color=color, linewidth=1.5, alpha=0.8)
         ax.scatter(xs, ys, s=5, color=color, alpha=0.8)
 
@@ -346,6 +484,224 @@ def plot_motion(
     ax.set_title("Vehicle Trajectories")
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
+    ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.3)
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+def draw_traces_with_lanes(
+    ax: plt.Axes,
+    traces: List[Dict[str, object]],
+    colors: List[str],
+    lane_polylines: Dict[int, List[Tuple[float, float]]],
+    extent: Optional[Tuple[float, float, float, float]] = None,
+    highlight_changes: bool = False,
+    emphasize_lane: bool = False,
+    draw_boxes: bool = False,
+    change_markers: bool = False,
+) -> None:
+    lane_color_map: Dict[int, str] = {}
+
+    for trace, color in zip(traces, colors):
+        lane_id = trace.get("current_lane_id")
+        if lane_id is not None and lane_id in lane_polylines:
+            lane_color = lane_color_map.setdefault(lane_id, color)
+            polyline = lane_polylines[lane_id]
+            xs_lane = [pt[0] for pt in polyline]
+            ys_lane = [pt[1] for pt in polyline]
+            lw = 2.5 if emphasize_lane else 1.2
+            ax.plot(xs_lane, ys_lane, linestyle="--", linewidth=lw, color=lane_color, alpha=0.8 if emphasize_lane else 0.6)
+            if emphasize_lane:
+                ax.scatter(xs_lane, ys_lane, s=18, color=lane_color, alpha=0.4, linewidths=0)
+
+        positions = trace.get("positions")  # type: ignore[assignment]
+        if not positions:
+            continue
+        xs = [pt[0] for pt in positions]
+        ys = [pt[1] for pt in positions]
+        lw = 2.4 if highlight_changes and trace.get("lane_change") else 1.6
+        alpha = 0.95 if highlight_changes and trace.get("lane_change") else 0.8
+        ax.plot(xs, ys, "-", color=color, linewidth=lw, alpha=alpha)
+        ax.scatter(xs, ys, s=5, color=color, alpha=0.6)
+
+        if draw_boxes:
+            xmin, xmax = min(xs), max(xs)
+            ymin, ymax = min(ys), max(ys)
+            width = max(xmax - xmin, 1.0)
+            height = max(ymax - ymin, 1.0)
+            rect = mpatches.Rectangle(
+                (xmin - 0.5, ymin - 0.5),
+                width + 1.0,
+                height + 1.0,
+                linewidth=1.2,
+                edgecolor=color,
+                facecolor="none",
+                alpha=0.75,
+                linestyle="--",
+            )
+            ax.add_patch(rect)
+
+        if change_markers and trace.get("lane_change_indices"):
+            change_indices: List[int] = trace["lane_change_indices"]  # type: ignore[assignment]
+            points = [positions[idx] for idx in change_indices if 0 <= idx < len(positions)]
+            if points:
+                cx = [pt[0] for pt in points]
+                cy = [pt[1] for pt in points]
+                ax.scatter(cx, cy, s=90, color=color, edgecolor="black", linewidths=1.2, alpha=0.95, marker="o")
+
+    if extent is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+
+
+def plot_closest_lane(
+    traces: List[Dict[str, object]],
+    colors: List[str],
+    lane_polylines: Dict[int, List[Tuple[float, float]]],
+    output_path: Path,
+    extent: Optional[Tuple[float, float, float, float]],
+) -> None:
+    if not traces:
+        print("No vehicle traces available for closest-lane plot.")
+        return
+    fig, ax = plt.subplots(figsize=(10, 10))
+    draw_traces_with_lanes(
+        ax,
+        traces,
+        colors,
+        lane_polylines,
+        extent,
+        highlight_changes=False,
+        emphasize_lane=True,
+        draw_boxes=True,
+    )
+    ax.set_title("Trajectories with Nearest Lane Centres")
+    ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.3)
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+def plot_lane_change_highlight(
+    traces: List[Dict[str, object]],
+    colors: List[str],
+    lane_polylines: Dict[int, List[Tuple[float, float]]],
+    output_path: Path,
+    extent: Optional[Tuple[float, float, float, float]],
+) -> None:
+    if not traces:
+        print("No vehicle traces available for lane-change plot.")
+        return
+    fig, ax = plt.subplots(figsize=(10, 10))
+    draw_traces_with_lanes(
+        ax,
+        traces,
+        colors,
+        lane_polylines,
+        extent,
+        highlight_changes=True,
+        emphasize_lane=True,
+        change_markers=True,
+    )
+    ax.set_title("Lane-Change Trajectories Highlighted")
+    ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.3)
+    fig.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+def plot_velocity_components(
+    traces: List[Dict[str, object]],
+    colors: List[str],
+    lane_polylines: Dict[int, List[Tuple[float, float]]],
+    lane_dir_map: Dict[int, Tuple[float, float]],
+    output_path: Path,
+    extent: Optional[Tuple[float, float, float, float]],
+) -> None:
+    if not traces:
+        print("No vehicle traces available for velocity-component plot.")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    draw_traces_with_lanes(
+        ax,
+        traces,
+        colors,
+        lane_polylines,
+        extent,
+        highlight_changes=False,
+        emphasize_lane=True,
+    )
+
+    for trace, color in zip(traces, colors):
+        current_index: Optional[int] = trace.get("current_index")  # type: ignore[assignment]
+        lane_id: Optional[int] = trace.get("current_lane_id")  # type: ignore[assignment]
+        positions: List[Tuple[float, float]] = trace.get("positions", [])  # type: ignore[assignment]
+        velocities: List[Tuple[float, float]] = trace.get("velocities", [])  # type: ignore[assignment]
+
+        if (
+            current_index is None
+            or lane_id is None
+            or current_index >= len(positions)
+            or current_index >= len(velocities)
+        ):
+            continue
+
+        lane_dir = lane_dir_map.get(lane_id)
+        if lane_dir is None:
+            continue
+
+        pos_x, pos_y = positions[current_index]
+        vx, vy = velocities[current_index]
+        dir_x, dir_y = lane_dir
+        perp_x, perp_y = -dir_y, dir_x
+
+        parallel_mag = vx * dir_x + vy * dir_y
+        perpendicular_mag = vx * perp_x + vy * perp_y
+
+        parallel_vec = (parallel_mag * dir_x, parallel_mag * dir_y)
+        perpendicular_vec = (perpendicular_mag * perp_x, perpendicular_mag * perp_y)
+
+        scale = 12.0
+        if abs(parallel_mag) > 1e-3:
+            ax.arrow(
+                pos_x,
+                pos_y,
+                parallel_vec[0] * scale,
+                parallel_vec[1] * scale,
+                color=color,
+                width=0.45,
+                length_includes_head=True,
+                head_width=1.6,
+                alpha=0.9,
+            )
+        if abs(perpendicular_mag) > 1e-3:
+            ax.arrow(
+                pos_x,
+                pos_y,
+                perpendicular_vec[0] * scale,
+                perpendicular_vec[1] * scale,
+                color="#2c3e50",
+                width=0.38,
+                length_includes_head=True,
+                head_width=1.4,
+                alpha=0.85,
+            )
+
+    if extent is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_title("Velocity Components Parallel vs Perpendicular to Lane")
     ax.grid(True, linestyle=":", linewidth=0.5, alpha=0.3)
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -419,14 +775,28 @@ def main() -> None:
 
     traces = collect_vehicle_traces(feature_map)
     lane_centers, boundaries = collect_road_points(feature_map)
+    lane_polylines = build_lane_polylines(lane_centers)
+    lane_dir_map = compute_lane_directions(lane_polylines)
+    lane_grid = build_lane_grid(lane_polylines)
+    assign_lane_information(traces, lane_grid)
+    colors = assign_trace_colors(traces)
     extent = compute_extent(traces, lane_centers, boundaries)
 
     motion_path = args.output_dir / "motion.png"
     roads_path = args.output_dir / "roads.png"
+    closest_lane_path = args.output_dir / "closestLane.png"
+    lane_change_path = args.output_dir / "laneChange.png"
+    velocity_components_path = args.output_dir / "velocityComponents.png"
 
-    plot_motion(traces, motion_path, extent)
+    plot_motion(traces, colors, motion_path, extent)
     plot_roads(lane_centers, boundaries, roads_path, extent)
-    print(f"Saved visualisations to {motion_path} and {roads_path}")
+    plot_closest_lane(traces, colors, lane_polylines, closest_lane_path, extent)
+    plot_lane_change_highlight(traces, colors, lane_polylines, lane_change_path, extent)
+    plot_velocity_components(traces, colors, lane_polylines, lane_dir_map, velocity_components_path, extent)
+    print(
+        "Saved visualisations to "
+        f"{motion_path}, {roads_path}, {closest_lane_path}, {lane_change_path}, and {velocity_components_path}"
+    )
 
 
 if __name__ == "__main__":
