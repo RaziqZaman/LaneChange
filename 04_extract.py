@@ -108,15 +108,24 @@ def process_row(row: pd.Series) -> Dict[str, float]:
     init_idx = int(row["initiation_timestep"])
     comp_idx = int(row["completion_timestep"])
 
-    sv_speed = extract_series(row, "SV_speed")
+    sv_speed_mag = extract_series(row, "SV_speed")
     sv_long_acc = extract_series(row, "SV_longitudinal_accel")
     sv_lat_acc = extract_series(row, "SV_lateral_accel")
+
+    # Replace missing/NaN accel with zero to keep integrations finite
+    sv_long_acc = np.where(np.isfinite(sv_long_acc), sv_long_acc, 0.0)
+    sv_lat_acc = np.where(np.isfinite(sv_lat_acc), sv_lat_acc, 0.0)
+
+    # Integrate lateral accel to get lateral velocity (baseline 0)
+    sv_lat_vel = np.cumsum(sv_lat_acc) * DT
+    # Derive longitudinal velocity magnitude using Pythagorean
+    sv_long_vel = np.sqrt(np.maximum(sv_speed_mag ** 2 - sv_lat_vel ** 2, 0.0))
     sv_long_jerk = jerks_from(sv_long_acc)
     sv_lat_jerk = jerks_from(sv_lat_acc)
 
     sv_axes = {
-        "long": {"speed": sv_speed, "acc": sv_long_acc, "jerk": sv_long_jerk},
-        "lat": {"speed": sv_speed, "acc": sv_lat_acc, "jerk": sv_lat_jerk},
+        "long": {"speed": sv_long_vel, "acc": sv_long_acc, "jerk": sv_long_jerk},
+        "lat": {"speed": sv_lat_vel, "acc": sv_lat_acc, "jerk": sv_lat_jerk},
     }
 
     data: Dict[str, float] = {
@@ -134,8 +143,12 @@ def process_row(row: pd.Series) -> Dict[str, float]:
     data["approach_duration"] = (mid_idx - init_idx) * DT
     data["settle_duration"] = (comp_idx - mid_idx) * DT
 
+    n_steps = len(sv_speed_mag)
+    init_eval_idx = min(init_idx + 1, n_steps - 1)
+    comp_eval_idx = max(comp_idx - 1, 0)
     window_start, window_end = init_idx, comp_idx
-    for phase, idx in {"init": init_idx, "mid": mid_idx, "comp": comp_idx}.items():
+    idx_map = {"init": init_eval_idx, "mid": mid_idx, "comp": comp_eval_idx}
+    for phase, idx in idx_map.items():
         for axis in AXES:
             for metric in METRICS_SV:
                 arr = sv_axes[axis][metric]
@@ -147,6 +160,13 @@ def process_row(row: pd.Series) -> Dict[str, float]:
             data[f"SV_peak_{axis}_{metric}"] = np.nanmax(window) if window.size else np.nan
 
     for role in ROLES:
+        role_missing = pd.isna(row.get(f"{role.lower()}_id", np.nan))
+        if role_missing:
+            for phase in PHASES_ROLE:
+                for metric in ROLE_METRICS:
+                    data[f"{role}_{phase}_{metric}"] = ""
+            continue
+
         gap = extract_series(row, f"{role}_longitudinal_gap")
         rel = extract_series(row, f"{role}_relative_speed")
         ttc, headway = ttc_and_headway(gap, rel)
@@ -157,7 +177,7 @@ def process_row(row: pd.Series) -> Dict[str, float]:
             "ttc": ttc,
             "headway": headway,
         }
-        for phase, idx in {"init": init_idx, "mid": mid_idx, "comp": comp_idx}.items():
+        for phase, idx in idx_map.items():
             for metric, arr in series_map.items():
                 data[f"{role}_{phase}_{metric}"] = pick_value(arr, idx)
         for metric, arr in series_map.items():
