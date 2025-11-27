@@ -69,14 +69,28 @@ def closing_speed(rel_speed: np.ndarray) -> np.ndarray:
     return np.where(rel_speed > 0, rel_speed, 0.0)
 
 
-def ttc_and_headway(gap: np.ndarray, rel_speed: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def ttc_series(gap: np.ndarray, rel_speed: np.ndarray) -> np.ndarray:
     close = closing_speed(rel_speed)
     with np.errstate(divide="ignore", invalid="ignore"):
         ttc = np.where(close > 0, gap / close, np.inf)
-        headway = np.where(close > 0, gap / close, np.inf)
     ttc[~np.isfinite(ttc)] = np.inf
+    return ttc
+
+
+def headway_series(role: str, gap: np.ndarray, rel_speed: np.ndarray, sv_speed: np.ndarray) -> np.ndarray:
+    """Headway = gap / follower speed.
+
+    Follower is SV for LC/LT; follower is RC/RT for RC/RT (speed = SV speed + relative speed).
+    """
+    if role in {"LC", "LT"}:
+        follower_speed = sv_speed
+    else:
+        follower_speed = sv_speed + rel_speed
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        headway = np.where(follower_speed > 0, gap / follower_speed, np.inf)
     headway[~np.isfinite(headway)] = np.inf
-    return ttc, headway
+    return headway
 
 
 def build_output_columns() -> List[str]:
@@ -169,7 +183,8 @@ def process_row(row: pd.Series) -> Dict[str, float]:
 
         gap = extract_series(row, f"{role}_longitudinal_gap")
         rel = extract_series(row, f"{role}_relative_speed")
-        ttc, headway = ttc_and_headway(gap, rel)
+        ttc = ttc_series(gap, rel)
+        headway = headway_series(role, gap, rel, sv_speed_mag)
 
         series_map = {
             "long_gap": gap,
