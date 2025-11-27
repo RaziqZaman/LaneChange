@@ -738,7 +738,12 @@ def build_trace_header(base_header: List[str]) -> List[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Measure lane-change events with detailed metrics.")
-    parser.add_argument("--data-dir", type=Path, default=Path("data"), help="Directory containing TFRecord files.")
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=Path("/Volumes/RaziqSSD/data"),
+        help="Directory containing TFRecord files (default: /Volumes/RaziqSSD/data).",
+    )
     parser.add_argument("--max-records", type=int, default=None, help="Optional limit for processed records.")
     return parser.parse_args()
 
@@ -1005,21 +1010,32 @@ def main() -> None:
 
 
 def iterate_examples(data_dir: Path, max_records: Optional[int]):
-    file_paths = sorted(data_dir.glob("*.tfrecord*"))
+    file_paths = sorted(p for p in data_dir.glob("*.tfrecord*") if not p.name.startswith("._"))
     file_iter: Iterable[Path] = file_paths
     if tqdm is not None:
         file_iter = tqdm(file_paths, total=len(file_paths), desc="Files", unit="file")
 
     processed = 0
     for tf_path in file_iter:
-        dataset = tf.data.TFRecordDataset(str(tf_path))
-        for record_index, raw in enumerate(dataset):
-            if max_records is not None and processed >= max_records:
-                return
-            example = tf.train.Example()
-            example.ParseFromString(raw.numpy())
-            yield tf_path, record_index, example
-            processed += 1
+        try:
+            dataset = tf.data.TFRecordDataset(str(tf_path))
+        except Exception as exc:
+            print(f"Skipping {tf_path}: failed to open TFRecord ({exc})")
+            continue
+        try:
+            for record_index, raw in enumerate(dataset):
+                if max_records is not None and processed >= max_records:
+                    return
+                example = tf.train.Example()
+                example.ParseFromString(raw.numpy())
+                yield tf_path, record_index, example
+                processed += 1
+        except tf.errors.DataLossError as exc:
+            print(f"Skipping {tf_path}: DataLossError ({exc})")
+            continue
+        except Exception as exc:
+            print(f"Skipping {tf_path}: failed while reading ({exc})")
+            continue
 
 
 if __name__ == "__main__":
