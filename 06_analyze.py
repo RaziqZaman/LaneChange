@@ -575,6 +575,21 @@ def main() -> None:
     args.stats.parent.mkdir(parents=True, exist_ok=True)
     stats_df.to_csv(args.stats, index=False)
 
+    # Subset outputs
+    subset_outputs = {
+        "base": stats_df[~stats_df["comparison"].str.contains("bucket", na=False)],
+        "buckets": stats_df[stats_df["comparison"].str.contains("bucket", na=False)],
+        "mannwhitney": stats_df[stats_df["test"] == "mannwhitney_u"],
+        "ks": stats_df[stats_df["test"] == "ks_2samp"],
+        "sv_metrics": stats_df[stats_df["metric"].str.startswith("SV_", na=False)],
+        "role_metrics": stats_df[
+            stats_df["metric"].str.startswith(("LC_", "RC_", "LT_", "RT_"), na=False)
+        ],
+    }
+    for name, sdf in subset_outputs.items():
+        out_path = args.stats.parent / f"06_analysis_stats_{name}.csv"
+        sdf.to_csv(out_path, index=False)
+
     plot_proximity_overlays(df, metrics, args.plots_dir)
 
     write_overview(
