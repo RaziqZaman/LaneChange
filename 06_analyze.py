@@ -120,6 +120,8 @@ def metric_columns(df: pd.DataFrame) -> List[str]:
     for col in df.columns:
         if col in exclude:
             continue
+        if "timestep" in col.lower():
+            continue
         if pd.api.types.is_numeric_dtype(df[col]):
             cols.append(col)
     return cols
@@ -229,7 +231,7 @@ def _stat_values(arr: np.ndarray) -> Dict[str, float]:
 def bootstrap_intervals(
     series1: pd.Series,
     series2: pd.Series,
-    n_boot: int = 5,
+    n_boot: int = 50,
     alpha: float = 0.05,
 ) -> Dict[str, float]:
     """Bootstrap CIs for Cliff's delta and stat differences."""
@@ -490,56 +492,37 @@ def run_tests_for_pair(
         **boot,
     }
 
-    if n1 == 0 or n2 == 0:
-        results.append(
-            {
-                **base_fields,
-                "test": "skipped",
-                "statistic": math.nan,
-                "p_value": math.nan,
-                "cliffs_delta": math.nan,
-                "notes": "insufficient data",
-            }
-        )
-        return
+    result_row = {
+        **base_fields,
+        "mwu_statistic": math.nan,
+        "mwu_p_value": math.nan,
+        "ks_statistic": math.nan,
+        "ks_p_value": math.nan,
+        "cliffs_delta": math.nan,
+        "notes": "",
+    }
 
-    try:
-        mw = mannwhitneyu(series1, series2, alternative="two-sided")
-        ks = ks_2samp(series1, series2, alternative="two-sided", mode="asymp")
-        delta = cliffs_delta(series1, series2)
-        mw_norm = float(mw.statistic) / float(n1 * n2) if n1 and n2 else math.nan
-        results.extend(
-            [
+    if n1 == 0 or n2 == 0:
+        result_row["notes"] = "insufficient data"
+    else:
+        try:
+            mw = mannwhitneyu(series1, series2, alternative="two-sided")
+            ks = ks_2samp(series1, series2, alternative="two-sided", mode="asymp")
+            delta = cliffs_delta(series1, series2)
+            mw_norm = float(mw.statistic) / float(n1 * n2) if n1 and n2 else math.nan
+            result_row.update(
                 {
-                    **base_fields,
-                    "test": "mannwhitney_u",
-                    "statistic": mw_norm,
-                    "p_value": float(mw.pvalue),
+                    "mwu_statistic": mw_norm,
+                    "mwu_p_value": float(mw.pvalue),
+                    "ks_statistic": float(ks.statistic),
+                    "ks_p_value": float(ks.pvalue),
                     "cliffs_delta": delta,
-                    "notes": "",
-                },
-                {
-                    **base_fields,
-                    "test": "ks_2samp",
-                    "statistic": float(ks.statistic),
-                    "p_value": float(ks.pvalue),
-                    "cliffs_delta": delta,
-                    "notes": "",
-                },
-            ]
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        results.append(
-            {
-                **base_fields,
-                "test": "error",
-                "statistic": math.nan,
-                "p_value": math.nan,
-                "cliffs_delta": math.nan,
-                "notes": f"failed: {exc}",
-            }
-        )
-        return
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            result_row["notes"] = f"failed: {exc}"
+
+    results.append(result_row)
 
     plot_metric(
         metric,
@@ -803,8 +786,6 @@ def main() -> None:
     subset_outputs = {
         "base": stats_df[~stats_df["comparison"].str.contains("bucket", na=False)],
         "buckets": stats_df[stats_df["comparison"].str.contains("bucket", na=False)],
-        "mannwhitney": stats_df[stats_df["test"] == "mannwhitney_u"],
-        "ks": stats_df[stats_df["test"] == "ks_2samp"],
         "sv_metrics": stats_df[stats_df["metric"].str.startswith("SV_", na=False)],
         "role_metrics": stats_df[
             stats_df["metric"].str.startswith(("LC_", "RC_", "LT_", "RT_"), na=False)
