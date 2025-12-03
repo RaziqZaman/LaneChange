@@ -175,6 +175,30 @@ def clean_numeric(series: pd.Series) -> pd.Series:
     return numeric.dropna()
 
 
+def describe(series: pd.Series) -> Dict[str, float]:
+    """Return summary statistics for a numeric series."""
+    if series.empty:
+        return {
+            "mean": math.nan,
+            "min": math.nan,
+            "q1": math.nan,
+            "median": math.nan,
+            "q3": math.nan,
+            "std": math.nan,
+            "max": math.nan,
+        }
+    values = series.to_numpy()
+    return {
+        "mean": float(np.mean(values)),
+        "min": float(np.min(values)),
+        "q1": float(np.percentile(values, 25)),
+        "median": float(np.median(values)),
+        "q3": float(np.percentile(values, 75)),
+        "std": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+        "max": float(np.max(values)),
+    }
+
+
 def make_buckets(series: pd.Series, width: float) -> pd.Series:
     """Assign bucket labels with step `width`; returns object series."""
     if not np.isfinite(width) or width <= 0:
@@ -243,6 +267,8 @@ def run_tests_for_pair(
 ) -> None:
     n1 = len(series1)
     n2 = len(series2)
+    desc1 = describe(series1)
+    desc2 = describe(series2)
     base_fields = {
         "comparison": comparison.name,
         "group1": comparison.group1_label,
@@ -250,6 +276,20 @@ def run_tests_for_pair(
         "metric": metric,
         "n1": n1,
         "n2": n2,
+        "g1_mean": desc1["mean"],
+        "g1_std": desc1["std"],
+        "g1_min": desc1["min"],
+        "g1_q1": desc1["q1"],
+        "g1_median": desc1["median"],
+        "g1_q3": desc1["q3"],
+        "g1_max": desc1["max"],
+        "g2_mean": desc2["mean"],
+        "g2_std": desc2["std"],
+        "g2_min": desc2["min"],
+        "g2_q1": desc2["q1"],
+        "g2_median": desc2["median"],
+        "g2_q3": desc2["q3"],
+        "g2_max": desc2["max"],
     }
 
     if n1 == 0 or n2 == 0:
@@ -269,12 +309,13 @@ def run_tests_for_pair(
         mw = mannwhitneyu(series1, series2, alternative="two-sided")
         ks = ks_2samp(series1, series2, alternative="two-sided", mode="asymp")
         delta = cliffs_delta(series1, series2)
+        mw_norm = float(mw.statistic) / float(n1 * n2) if n1 and n2 else math.nan
         results.extend(
             [
                 {
                     **base_fields,
                     "test": "mannwhitney_u",
-                    "statistic": float(mw.statistic),
+                    "statistic": mw_norm,
                     "p_value": float(mw.pvalue),
                     "cliffs_delta": delta,
                     "notes": "",
@@ -284,14 +325,6 @@ def run_tests_for_pair(
                     "test": "ks_2samp",
                     "statistic": float(ks.statistic),
                     "p_value": float(ks.pvalue),
-                    "cliffs_delta": delta,
-                    "notes": "",
-                },
-                {
-                    **base_fields,
-                    "test": "cliffs_delta",
-                    "statistic": delta,
-                    "p_value": math.nan,
                     "cliffs_delta": delta,
                     "notes": "",
                 },
@@ -321,6 +354,59 @@ def run_tests_for_pair(
         / metric_subpath(metric)
         / f"06_analysis_{sanitize_name(comparison.name)}_{sanitize_name(metric)}.png",
     )
+
+
+def plot_proximity_overlays(df: pd.DataFrame, metrics: List[str], plots_dir: Path) -> None:
+    """Plot all proximity buckets for each metric on shared histograms."""
+    has_av = df[STATE_COLS].eq("AV").any(axis=1)
+    overlay_width = 45.0  # meters for overlay plots only
+
+    # Build overlay bucket labels (does not affect statistical comparisons).
+    any_overlay = make_buckets(df["closest_av_init_gap"], overlay_width)
+    role_overlay: Dict[str, pd.Series] = {}
+    for role in ROLES:
+        state_col = f"{role}_state"
+        gap_col = ROLE_INIT_GAP[role]
+        mask = df[state_col] == "AV"
+        bucket_series = pd.Series(pd.NA, index=df.index, dtype="object")
+        if mask.any():
+            bucket_series.loc[mask] = make_buckets(df.loc[mask, gap_col], overlay_width)
+        role_overlay[role] = bucket_series
+
+    def plot_overlay(series_map: Dict[str, pd.Series], name: str, metric: str) -> None:
+        non_empty = {k: v for k, v in series_map.items() if len(v) > 0}
+        if len(non_empty) < 2:
+            return
+        output_path = (
+            plots_dir
+            / "proximity"
+            / metric_subpath(metric)
+            / f"06_analysis_{sanitize_name(name)}_{sanitize_name(metric)}.png"
+        )
+        plot_metric(metric, non_empty, output_path)
+
+    # Any-AV buckets vs no-AV baseline.
+    for metric in metrics:
+        series_map: Dict[str, pd.Series] = {}
+        no_av_series = clean_numeric(df.loc[~has_av, metric])
+        if len(no_av_series) > 0:
+            series_map["no_AV"] = no_av_series
+        for bucket in sorted(any_overlay.dropna().unique()):
+            series_map[f"bucket_{bucket}"] = clean_numeric(df.loc[any_overlay == bucket, metric])
+        plot_overlay(series_map, "any_av_buckets", metric)
+
+    # Role-specific buckets vs HD baseline.
+    for role in ROLES:
+        state_col = f"{role}_state"
+        bucket_series = role_overlay[role]
+        for metric in metrics:
+            series_map: Dict[str, pd.Series] = {}
+            hd_series = clean_numeric(df.loc[df[state_col] == "HD", metric])
+            if len(hd_series) > 0:
+                series_map[f"{role}_HD"] = hd_series
+            for bucket in sorted(bucket_series.dropna().unique()):
+                series_map[f"{role}_bucket_{bucket}"] = clean_numeric(df.loc[bucket_series == bucket, metric])
+            plot_overlay(series_map, f"{role}_av_buckets", metric)
 
 
 def build_base_comparisons(df: pd.DataFrame) -> List[Comparison]:
@@ -488,6 +574,8 @@ def main() -> None:
     stats_df = pd.DataFrame(results)
     args.stats.parent.mkdir(parents=True, exist_ok=True)
     stats_df.to_csv(args.stats, index=False)
+
+    plot_proximity_overlays(df, metrics, args.plots_dir)
 
     write_overview(
         args.overview,
