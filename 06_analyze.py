@@ -27,7 +27,7 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -60,6 +60,7 @@ STATS_PATH = Path("outputs/06_analysis_stats.csv")
 OVERVIEW_PATH = Path("outputs/06_analysis_overview.txt")
 PLOTS_DIR = Path("outputs/06_analysis_plots")
 PROXIMITY_BUCKET_WIDTH = 15.0  # meters
+PROXIMITY_OVERLAY_BUCKET_WIDTH = 45.0  # meters for overlay plots
 
 STATE_COLS = ["LC_state", "RC_state", "LT_state", "RT_state"]
 ROLES = ["LC", "RC", "LT", "RT"]
@@ -128,6 +129,19 @@ def sanitize_name(name: str) -> str:
     return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in name)
 
 
+def metric_stage(metric: str) -> str:
+    lower = metric.lower()
+    if "init_" in lower:
+        return "init"
+    if "mid_" in lower:
+        return "mid"
+    if "comp_" in lower:
+        return "comp"
+    if "peak_" in lower or lower.startswith("min_") or lower.startswith("max_"):
+        return "peak"
+    return "other"
+
+
 def metric_subpath(metric: str) -> Path:
     """Determine subfolder path for a metric."""
     lower = metric.lower()
@@ -136,36 +150,36 @@ def metric_subpath(metric: str) -> Path:
     if metric.startswith("SV_") or "duration" in lower:
         sv_root = Path("SV")
         if "duration" in lower:
-            return sv_root / "duration"
+            return Path(metric_stage(metric)) / sv_root / "duration"
         if "long_speed" in lower:
-            return sv_root / "long_speed"
+            return Path(metric_stage(metric)) / sv_root / "long_speed"
         if "long_acc" in lower:
-            return sv_root / "long_acc"
+            return Path(metric_stage(metric)) / sv_root / "long_acc"
         if "long_jerk" in lower:
-            return sv_root / "long_jerk"
+            return Path(metric_stage(metric)) / sv_root / "long_jerk"
         if "lat_speed" in lower:
-            return sv_root / "lat_speed"
+            return Path(metric_stage(metric)) / sv_root / "lat_speed"
         if "lat_acc" in lower:
-            return sv_root / "lat_acc"
+            return Path(metric_stage(metric)) / sv_root / "lat_acc"
         if "lat_jerk" in lower:
-            return sv_root / "lat_jerk"
-        return sv_root / "other"
+            return Path(metric_stage(metric)) / sv_root / "lat_jerk"
+        return Path(metric_stage(metric)) / sv_root / "other"
 
     # Neighbor roles.
     for role in ROLES:
         if metric.startswith(f"{role}_"):
             role_root = Path(role)
             if "long_gap" in lower:
-                return role_root / "long_gap"
+                return Path(metric_stage(metric)) / role_root / "long_gap"
             if "rel_speed" in lower:
-                return role_root / "rel_speed"
+                return Path(metric_stage(metric)) / role_root / "rel_speed"
             if "ttc" in lower:
-                return role_root / "ttc"
+                return Path(metric_stage(metric)) / role_root / "ttc"
             if "headway" in lower:
-                return role_root / "headway"
-            return role_root / "other"
+                return Path(metric_stage(metric)) / role_root / "headway"
+            return Path(metric_stage(metric)) / role_root / "other"
 
-    return Path("other")
+    return Path(metric_stage(metric)) / "other"
 
 
 def clean_numeric(series: pd.Series) -> pd.Series:
@@ -199,6 +213,100 @@ def describe(series: pd.Series) -> Dict[str, float]:
     }
 
 
+def _stat_values(arr: np.ndarray) -> Dict[str, float]:
+    n = len(arr)
+    return {
+        "mean": float(np.mean(arr)),
+        "std": float(np.std(arr, ddof=1)) if n > 1 else 0.0,
+        "min": float(np.min(arr)),
+        "q1": float(np.percentile(arr, 25)),
+        "median": float(np.median(arr)),
+        "q3": float(np.percentile(arr, 75)),
+        "max": float(np.max(arr)),
+    }
+
+
+def bootstrap_intervals(
+    series1: pd.Series,
+    series2: pd.Series,
+    n_boot: int = 5,
+    alpha: float = 0.05,
+) -> Dict[str, float]:
+    """Bootstrap CIs for Cliff's delta and stat differences."""
+    if len(series1) == 0 or len(series2) == 0:
+        keys = [
+            "cliffs_delta_ci_lower",
+            "cliffs_delta_ci_upper",
+            "diff_mean_ci_lower",
+            "diff_mean_ci_upper",
+            "diff_std_ci_lower",
+            "diff_std_ci_upper",
+            "diff_min_ci_lower",
+            "diff_min_ci_upper",
+            "diff_q1_ci_lower",
+            "diff_q1_ci_upper",
+            "diff_median_ci_lower",
+            "diff_median_ci_upper",
+            "diff_q3_ci_lower",
+            "diff_q3_ci_upper",
+            "diff_max_ci_lower",
+            "diff_max_ci_upper",
+        ]
+        return {k: math.nan for k in keys}
+
+    a = series1.to_numpy()
+    b = series2.to_numpy()
+    rng = np.random.default_rng()
+
+    deltas: List[float] = []
+    diff_mean: List[float] = []
+    diff_std: List[float] = []
+    diff_min: List[float] = []
+    diff_q1: List[float] = []
+    diff_median: List[float] = []
+    diff_q3: List[float] = []
+    diff_max: List[float] = []
+
+    for _ in range(n_boot):
+        sa = rng.choice(a, size=len(a), replace=True)
+        sb = rng.choice(b, size=len(b), replace=True)
+        stats_a = _stat_values(sa)
+        stats_b = _stat_values(sb)
+
+        deltas.append(cliffs_delta(sa, sb))
+        diff_mean.append(stats_a["mean"] - stats_b["mean"])
+        diff_std.append(stats_a["std"] - stats_b["std"])
+        diff_min.append(stats_a["min"] - stats_b["min"])
+        diff_q1.append(stats_a["q1"] - stats_b["q1"])
+        diff_median.append(stats_a["median"] - stats_b["median"])
+        diff_q3.append(stats_a["q3"] - stats_b["q3"])
+        diff_max.append(stats_a["max"] - stats_b["max"])
+
+    def ci(values: List[float]) -> tuple[float, float]:
+        lower, upper = np.percentile(values, [alpha / 2 * 100, (1 - alpha / 2) * 100])
+        return float(lower), float(upper)
+
+    delta_ci = ci(deltas)
+    return {
+        "cliffs_delta_ci_lower": delta_ci[0],
+        "cliffs_delta_ci_upper": delta_ci[1],
+        "diff_mean_ci_lower": ci(diff_mean)[0],
+        "diff_mean_ci_upper": ci(diff_mean)[1],
+        "diff_std_ci_lower": ci(diff_std)[0],
+        "diff_std_ci_upper": ci(diff_std)[1],
+        "diff_min_ci_lower": ci(diff_min)[0],
+        "diff_min_ci_upper": ci(diff_min)[1],
+        "diff_q1_ci_lower": ci(diff_q1)[0],
+        "diff_q1_ci_upper": ci(diff_q1)[1],
+        "diff_median_ci_lower": ci(diff_median)[0],
+        "diff_median_ci_upper": ci(diff_median)[1],
+        "diff_q3_ci_lower": ci(diff_q3)[0],
+        "diff_q3_ci_upper": ci(diff_q3)[1],
+        "diff_max_ci_lower": ci(diff_max)[0],
+        "diff_max_ci_upper": ci(diff_max)[1],
+    }
+
+
 def make_buckets(series: pd.Series, width: float) -> pd.Series:
     """Assign bucket labels with step `width`; returns object series."""
     if not np.isfinite(width) or width <= 0:
@@ -218,6 +326,75 @@ def make_buckets(series: pd.Series, width: float) -> pd.Series:
     return cut.astype("object")
 
 
+def compute_plot_bins(df: pd.DataFrame, metrics: List[str]) -> Dict[str, np.ndarray]:
+    bins_map: Dict[str, np.ndarray] = {}
+    for metric in metrics:
+        values = clean_numeric(df[metric])
+        if values.empty:
+            continue
+        try:
+            bins = np.histogram_bin_edges(values, bins=30)
+            bins_map[metric] = bins
+        except Exception:
+            continue
+    return bins_map
+
+
+def compute_ymax_map(
+    df: pd.DataFrame,
+    metrics: List[str],
+    comparisons: List[Comparison],
+    bins_map: Dict[str, np.ndarray],
+) -> Dict[str, float]:
+    y_max: Dict[str, float] = {m: 0.0 for m in metrics}
+
+    def update(metric: str, series: pd.Series) -> None:
+        if series.empty:
+            return
+        bins = bins_map.get(metric)
+        if bins is None:
+            return
+        hist, _ = np.histogram(series, bins=bins, density=True)
+        if len(hist):
+            y_max[metric] = max(y_max[metric], float(hist.max()))
+
+    # Base and proximity comparisons (group1/group2).
+    for comp in comparisons:
+        df1 = df.loc[comp.mask1]
+        df2 = df.loc[comp.mask2]
+        for metric in metrics:
+            update(metric, clean_numeric(df1[metric]))
+            update(metric, clean_numeric(df2[metric]))
+
+    # Overlay bucket groupings using 45m buckets.
+    has_av = df[STATE_COLS].eq("AV").any(axis=1)
+    any_overlay = make_buckets(df["closest_av_init_gap"], PROXIMITY_OVERLAY_BUCKET_WIDTH)
+    role_overlay: Dict[str, pd.Series] = {}
+    for role in ROLES:
+        state_col = f"{role}_state"
+        gap_col = ROLE_INIT_GAP[role]
+        mask = df[state_col] == "AV"
+        bucket_series = pd.Series(pd.NA, index=df.index, dtype="object")
+        if mask.any():
+            bucket_series.loc[mask] = make_buckets(df.loc[mask, gap_col], PROXIMITY_OVERLAY_BUCKET_WIDTH)
+        role_overlay[role] = bucket_series
+
+    for metric in metrics:
+        update(metric, clean_numeric(df.loc[~has_av, metric]))
+        for bucket in sorted(any_overlay.dropna().unique()):
+            update(metric, clean_numeric(df.loc[any_overlay == bucket, metric]))
+
+    for role in ROLES:
+        state_col = f"{role}_state"
+        bucket_series = role_overlay[role]
+        for metric in metrics:
+            update(metric, clean_numeric(df.loc[df[state_col] == "HD", metric]))
+            for bucket in sorted(bucket_series.dropna().unique()):
+                update(metric, clean_numeric(df.loc[bucket_series == bucket, metric]))
+
+    return y_max
+
+
 def compute_closest_av_gap(row: pd.Series) -> float:
     """Return the smallest init gap for any AV in the row, or NaN."""
     gaps: List[float] = []
@@ -235,14 +412,20 @@ def compute_closest_av_gap(row: pd.Series) -> float:
     return min(gaps) if gaps else math.nan
 
 
-def plot_metric(metric: str, series_map: Dict[str, Sequence[float]], output_path: Path) -> None:
+def plot_metric(
+    metric: str,
+    series_map: Dict[str, Sequence[float]],
+    output_path: Path,
+    bins: Optional[np.ndarray] = None,
+    y_max: Optional[float] = None,
+) -> None:
     fig, ax = plt.subplots(figsize=(8, 5))
     for label, values in series_map.items():
         if len(values) == 0:
             continue
         ax.hist(
             values,
-            bins=30,
+            bins=bins if bins is not None else 30,
             alpha=0.5,
             density=True,
             label=f"{label} (n={len(values)})",
@@ -250,6 +433,10 @@ def plot_metric(metric: str, series_map: Dict[str, Sequence[float]], output_path
     ax.set_title(metric)
     ax.set_xlabel(metric)
     ax.set_ylabel("Density")
+    if bins is not None and len(bins) >= 2:
+        ax.set_xlim(bins[0], bins[-1])
+    if y_max is not None and np.isfinite(y_max) and y_max > 0:
+        ax.set_ylim(0, y_max * 1.05)
     ax.legend()
     fig.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -264,11 +451,14 @@ def run_tests_for_pair(
     series2: pd.Series,
     results: List[Dict[str, object]],
     plots_dir: Path,
+    bins_map: Dict[str, np.ndarray],
+    y_max_map: Dict[str, float],
 ) -> None:
     n1 = len(series1)
     n2 = len(series2)
     desc1 = describe(series1)
     desc2 = describe(series2)
+    boot = bootstrap_intervals(series1, series2)
     base_fields = {
         "comparison": comparison.name,
         "group1": comparison.group1_label,
@@ -290,6 +480,14 @@ def run_tests_for_pair(
         "g2_median": desc2["median"],
         "g2_q3": desc2["q3"],
         "g2_max": desc2["max"],
+        "diff_mean": desc1["mean"] - desc2["mean"],
+        "diff_std": desc1["std"] - desc2["std"],
+        "diff_min": desc1["min"] - desc2["min"],
+        "diff_q1": desc1["q1"] - desc2["q1"],
+        "diff_median": desc1["median"] - desc2["median"],
+        "diff_q3": desc1["q3"] - desc2["q3"],
+        "diff_max": desc1["max"] - desc2["max"],
+        **boot,
     }
 
     if n1 == 0 or n2 == 0:
@@ -353,13 +551,21 @@ def run_tests_for_pair(
         / ("proximity" if "bucket" in comparison.name else "base")
         / metric_subpath(metric)
         / f"06_analysis_{sanitize_name(comparison.name)}_{sanitize_name(metric)}.png",
+        bins=bins_map.get(metric),
+        y_max=y_max_map.get(metric),
     )
 
 
-def plot_proximity_overlays(df: pd.DataFrame, metrics: List[str], plots_dir: Path) -> None:
+def plot_proximity_overlays(
+    df: pd.DataFrame,
+    metrics: List[str],
+    plots_dir: Path,
+    bins_map: Dict[str, np.ndarray],
+    y_max_map: Dict[str, float],
+) -> None:
     """Plot all proximity buckets for each metric on shared histograms."""
     has_av = df[STATE_COLS].eq("AV").any(axis=1)
-    overlay_width = 45.0  # meters for overlay plots only
+    overlay_width = PROXIMITY_OVERLAY_BUCKET_WIDTH  # meters for overlay plots only
 
     # Build overlay bucket labels (does not affect statistical comparisons).
     any_overlay = make_buckets(df["closest_av_init_gap"], overlay_width)
@@ -383,7 +589,13 @@ def plot_proximity_overlays(df: pd.DataFrame, metrics: List[str], plots_dir: Pat
             / metric_subpath(metric)
             / f"06_analysis_{sanitize_name(name)}_{sanitize_name(metric)}.png"
         )
-        plot_metric(metric, non_empty, output_path)
+        plot_metric(
+            metric,
+            non_empty,
+            output_path,
+            bins=bins_map.get(metric),
+            y_max=y_max_map.get(metric),
+        )
 
     # Any-AV buckets vs no-AV baseline.
     for metric in metrics:
@@ -553,6 +765,9 @@ def main() -> None:
     base_comparisons = build_base_comparisons(df)
     proximity_comparisons = build_proximity_comparisons(df)
 
+    plot_bins = compute_plot_bins(df, metrics)
+    y_max_map = compute_ymax_map(df, metrics, [*base_comparisons, *proximity_comparisons], plot_bins)
+
     all_comparisons = [*base_comparisons, *proximity_comparisons]
     total_steps = len(all_comparisons) * len(metrics)
     bar = tqdm(total=total_steps, desc="Comparisons x metrics", leave=False) if tqdm else None
@@ -564,7 +779,16 @@ def main() -> None:
         for metric in metrics:
             series1 = clean_numeric(df1[metric])
             series2 = clean_numeric(df2[metric])
-            run_tests_for_pair(comp, metric, series1, series2, results, args.plots_dir)
+            run_tests_for_pair(
+                comp,
+                metric,
+                series1,
+                series2,
+                results,
+                args.plots_dir,
+                plot_bins,
+                y_max_map,
+            )
             if bar is not None:
                 bar.update(1)
 
@@ -590,7 +814,7 @@ def main() -> None:
         out_path = args.stats.parent / f"06_analysis_stats_{name}.csv"
         sdf.to_csv(out_path, index=False)
 
-    plot_proximity_overlays(df, metrics, args.plots_dir)
+    plot_proximity_overlays(df, metrics, args.plots_dir, plot_bins, y_max_map)
 
     write_overview(
         args.overview,
